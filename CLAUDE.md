@@ -28,6 +28,27 @@ timelycal/
 └── .gitignore
 ```
 
+## Git Workflow
+
+**Every change must follow this process — no direct commits to `main`:**
+
+1. Create a new branch for the feature or fix:
+   ```bash
+   git checkout -b feat/your-feature-name
+   # or
+   git checkout -b fix/your-fix-name
+   ```
+2. Make changes, commit to the branch
+3. Push the branch and open a PR:
+   ```bash
+   git push origin feat/your-feature-name
+   gh pr create --title "..." --body "..."
+   ```
+4. Wait for the owner (harrischew) to review and approve the PR on GitHub before merging to `main`
+5. CI/CD pipeline runs automatically on merge to `main`
+
+**Do not push directly to `main`.** All merges must go through an approved PR.
+
 ## Infrastructure
 - **GCP Project:** `my-telegram-bot-001`
 - **Cloud Run service:** `telegram-bot` (region: `us-central1`)
