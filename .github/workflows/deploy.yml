@@ -1,0 +1,45 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Build and push image
+        run: |
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT }}/telegram-bot ./backend
+          docker push gcr.io/${{ secrets.GCP_PROJECT }}/telegram-bot
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy telegram-bot \
+            --image gcr.io/${{ secrets.GCP_PROJECT }}/telegram-bot \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated \
+            --set-secrets "BOT_TOKEN=BOT_TOKEN:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
+            --set-env-vars "GCS_BUCKET=timelycal-pdfs,GCP_PROJECT=my-telegram-bot-001,GCP_REGION=us-central1" \
+            --min-instances 0 \
+            --max-instances 1 \
+            --memory 512Mi \
+            --timeout 300 \
+            --project ${{ secrets.GCP_PROJECT }}
+
+      - name: Re-register Telegram webhook
+        run: curl -sf ${{ secrets.SERVICE_URL }}/webhook/set-webhook
