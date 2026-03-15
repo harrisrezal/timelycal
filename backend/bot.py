@@ -1,6 +1,5 @@
 import asyncio
 import os
-import time
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -14,13 +13,6 @@ from telegram.ext import (
 )
 
 load_dotenv()
-
-_APP_START_TIME = time.time()
-
-
-def _is_cold_start() -> bool:
-    """True if this request arrived within 30s of app startup (cold start window)."""
-    return (time.time() - _APP_START_TIME) < 30
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
@@ -58,10 +50,6 @@ async def ask_day_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     from datetime import datetime
     from services.schedule import STATIONS
 
-    if _is_cold_start():
-        await update.message.reply_text(
-            "⏳ Server just woke up from idle — first response may take ~10 seconds."
-        )
 
     pacific = pytz.timezone("America/Los_Angeles")
     today = datetime.now(pacific).weekday()
@@ -175,10 +163,6 @@ async def cancel_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def ask_timing_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from services.user_prefs import get_preference
 
-    if _is_cold_start():
-        await update.message.reply_text(
-            "⏳ Server just woke up from idle — first response may take ~10 seconds."
-        )
 
     pref = get_preference(update.effective_user.id)
     if pref:
@@ -397,10 +381,6 @@ async def mystation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from services.user_prefs import get_preference
     from services.schedule import get_next_trains, STATIONS
 
-    if _is_cold_start():
-        await update.message.reply_text(
-            "⏳ Server just woke up from idle — first response may take ~10 seconds."
-        )
 
     pref = get_preference(update.effective_user.id)
     if not pref:
@@ -506,10 +486,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for plain text messages — queries the RAG pipeline."""
     from services.rag import query
 
-    if _is_cold_start():
-        await update.message.reply_text(
-            "⏳ Server just woke up from idle — first response may take ~10 seconds."
-        )
 
     text = update.message.text
     task = asyncio.create_task(asyncio.to_thread(query, text))
