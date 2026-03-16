@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "question": "What time is the first train from Lawrence to San Francisco on weekdays?",
+    "must_contain": ["Lawrence"]
+  },
+  {
+    "question": "When is the last train from San Jose Diridon on weekends?",
+    "must_contain": ["San Jose"]
+  },
+  {
+    "question": "What trains stop at Palo Alto on weekday mornings towards San Francisco?",
+    "must_contain": ["Palo Alto"]
+  }
+]
