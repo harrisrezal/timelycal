@@ -352,10 +352,6 @@ async def save_station_callback(update: Update, context: ContextTypes.DEFAULT_TY
 # ── Command Handlers ──────────────────────────────────────────────────────────
 
 async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if _is_cold_start():
-        await update.message.reply_text(
-            "⏳ Server just woke up from idle — first response may take ~10 seconds."
-        )
     user = update.effective_user
     await update.message.reply_text(
         f"Hello {user.first_name}! I'm TimelyCal, your Caltrain assistant.\n\n"
@@ -368,10 +364,6 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if _is_cold_start():
-        await update.message.reply_text(
-            "⏳ Server just woke up from idle — first response may take ~10 seconds."
-        )
     await update.message.reply_text(HELP_TEXT)
 
 
