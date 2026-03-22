@@ -17,7 +17,7 @@ load_dotenv()
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # ConversationHandler states
-SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED = range(4)
+SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO = range(6)
 
 
 # ── /next Guided Menu ─────────────────────────────────────────────────────────
@@ -31,10 +31,11 @@ HELP_TEXT = (
     "• When is the last train on weekends?\n"
     "• How long does it take from Millbrae to Palo Alto?\n\n"
     "Commands:\n"
-    "/next       - Next 3 trains from a station\n"
-    "/schedule   - Full day timetable for a station\n"
-    "/mystation  - View or change your saved station\n"
-    "/help       - Show this message"
+    "/next         - Next 3 trains from a station\n"
+    "/schedule     - Full day timetable for a station\n"
+    "/traveltime   - Travel time between two stations\n"
+    "/mystation    - View or change your saved station\n"
+    "/help         - Show this message"
 )
 
 
@@ -496,6 +497,91 @@ async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ── /traveltime ───────────────────────────────────────────────────────────────
+
+async def ask_tt_from(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.schedule import STATIONS
+    buttons = [InlineKeyboardButton(s, callback_data=f"tt_from:{s}") for s in STATIONS]
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    await update.message.reply_text(
+        "Select your departure station:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_TT_FROM
+
+
+async def ask_tt_to(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.schedule import STATIONS
+    query = update.callback_query
+    await query.answer()
+    context.user_data["tt_from"] = query.data.split(":", 1)[1]
+
+    buttons = [InlineKeyboardButton(s, callback_data=f"tt_to:{s}") for s in STATIONS]
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    await query.edit_message_text(
+        f"From: {context.user_data['tt_from']}\nNow select your destination station:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_TT_TO
+
+
+async def show_travel_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    import pytz
+    from datetime import datetime
+    from services.schedule import get_travel_times
+
+    query = update.callback_query
+    await query.answer()
+
+    from_station = context.user_data["tt_from"]
+    to_station = query.data.split(":", 1)[1]
+
+    if from_station == to_station:
+        await query.edit_message_text(
+            "⚠️ Please pick a different destination station — origin and destination cannot be the same."
+        )
+        return ConversationHandler.END
+
+    pacific = pytz.timezone("America/Los_Angeles")
+    now_dt = datetime.now(pacific)
+    day_type = "weekday" if now_dt.weekday() < 5 else "weekend"
+
+    trains = get_travel_times(from_station, to_station, day_type)
+
+    if not trains:
+        await query.edit_message_text(
+            f"No schedule data found for {from_station} → {to_station} ({day_type.capitalize()}).\n"
+            "This route may not be directly served by Caltrain."
+        )
+        return ConversationHandler.END
+
+    normal  = [t for t in trains if not t["label"]]
+    limited = [t for t in trains if t["label"] == " [Limited]"]
+    express = [t for t in trains if t["label"] == " [Express]"]
+
+    def fmt_section(emoji_label, items, not_available_msg):
+        if not items:
+            return f"{emoji_label}\nℹ️ {not_available_msg}"
+        rows = "\n".join(
+            f"Train {t['train']} — {t['depart_str']} → {t['arrive_str']} ({t['duration_mins']} mins)"
+            for t in items
+        )
+        return f"{emoji_label}\n{rows}"
+
+    sections = [
+        fmt_section("🚂 Normal trains:", normal, "No normal trains serve both stations."),
+        fmt_section("⚡ Limited trains:", limited, "Limited trains do not stop at one or both of these stations."),
+        fmt_section("🚄 Express trains:", express, "Express trains do not stop at one or both of these stations."),
+    ]
+
+    body = "\n\n".join(sections)
+    header = f"🗺 {from_station} → {to_station} ({day_type.capitalize()})\n\n"
+    await query.edit_message_text(header + body + "\n\n⚠️ Schedule-based only. Not real-time.")
+    return ConversationHandler.END
+
+
 # ── Application Builder ───────────────────────────────────────────────────────
 
 def get_application() -> Application:
@@ -532,6 +618,18 @@ def get_application() -> Application:
         allow_reentry=True,
     )
     app.add_handler(timing_conv)
+
+    # Travel time menu
+    traveltime_conv = ConversationHandler(
+        entry_points=[CommandHandler("traveltime", ask_tt_from)],
+        states={
+            SELECT_TT_FROM: [cancel_handler, CallbackQueryHandler(ask_tt_to, pattern="^tt_from:")],
+            SELECT_TT_TO: [cancel_handler, CallbackQueryHandler(show_travel_times, pattern="^tt_to:")],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_schedule)],
+        allow_reentry=True,
+    )
+    app.add_handler(traveltime_conv)
 
     # Standalone preference callbacks (outside ConversationHandlers)
     app.add_handler(CallbackQueryHandler(save_station_callback, pattern="^save_station:"))
