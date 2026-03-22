@@ -64,6 +64,15 @@ def _is_towards_sf(train_number: int) -> bool:
     return train_number % 2 == 1
 
 
+def _train_label(train_number: int) -> str:
+    """Return a service type label for display. 4xx = Limited, 5xx = Express."""
+    if 400 <= train_number <= 499:
+        return " [Limited]"
+    if 500 <= train_number <= 599:
+        return " [Express]"
+    return ""
+
+
 def get_next_trains(
     station: str, day_type: str, direction: str, n: int = 3
 ) -> list[dict]:

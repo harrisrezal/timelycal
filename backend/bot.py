@@ -69,7 +69,7 @@ async def show_both_directions(update: Update, context: ContextTypes.DEFAULT_TYP
     """Show next 3 trains in both directions for the selected station."""
     import pytz
     from datetime import datetime
-    from services.schedule import get_next_trains
+    from services.schedule import get_next_trains, _train_label
 
     query = update.callback_query
     await query.answer()
@@ -98,7 +98,7 @@ async def show_both_directions(update: Update, context: ContextTypes.DEFAULT_TYP
             diff = train_mins - now_mins
             if diff < 0:
                 diff += 24 * 60
-            lines.append(f"Train {t['train']} — {t['time_str']} (in {diff} mins)")
+            lines.append(f"Train {t['train']}{_train_label(t['train'])} — {t['time_str']} (in {diff} mins)")
         return "\n".join(lines)
 
     sf_trains = format_trains("sf")
@@ -276,7 +276,7 @@ async def ask_timing_direction(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def show_timing_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    from services.schedule import get_all_trains
+    from services.schedule import get_all_trains, _train_label
     from services.user_prefs import get_preference
 
     query = update.callback_query
@@ -306,7 +306,7 @@ async def show_timing_results(update: Update, context: ContextTypes.DEFAULT_TYPE
     def section(label, items):
         if not items:
             return ""
-        rows = "\n".join(f"Train {t['train']} — {t['time_str']}" for t in items)
+        rows = "\n".join(f"Train {t['train']}{_train_label(t['train'])} — {t['time_str']}" for t in items)
         return f"{label}\n{rows}"
 
     body = "\n\n".join(
@@ -371,7 +371,7 @@ async def mystation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import pytz
     from datetime import datetime
     from services.user_prefs import get_preference
-    from services.schedule import get_next_trains, STATIONS
+    from services.schedule import get_next_trains, _train_label, STATIONS
 
 
     pref = get_preference(update.effective_user.id)
@@ -404,7 +404,7 @@ async def mystation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             diff = train_mins - now_mins
             if diff < 0:
                 diff += 24 * 60
-            lines.append(f"Train {t['train']} — {t['time_str']} (in {diff} mins)")
+            lines.append(f"Train {t['train']}{_train_label(t['train'])} — {t['time_str']} (in {diff} mins)")
         return "\n".join(lines)
 
     sf_trains = format_trains("sf")
