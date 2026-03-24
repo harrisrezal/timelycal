@@ -550,7 +550,7 @@ async def ask_tt_to(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def show_travel_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     import pytz
     from datetime import datetime
-    from services.schedule import get_travel_times
+    from services.schedule import get_travel_times, STATIONS
 
     query = update.callback_query
     await query.answer()
@@ -566,38 +566,74 @@ async def show_travel_times(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     pacific = pytz.timezone("America/Los_Angeles")
     now_dt = datetime.now(pacific)
+    now_time = now_dt.time()
     day_type = "weekday" if now_dt.weekday() < 5 else "weekend"
 
-    trains = get_travel_times(from_station, to_station, day_type)
+    # Fetch both directions: A→B and B→A (swapping from/to flips direction automatically)
+    trains_ab = get_travel_times(from_station, to_station, day_type)
+    trains_ba = get_travel_times(to_station, from_station, day_type)
 
-    if not trains:
+    if not trains_ab and not trains_ba:
         await query.edit_message_text(
-            f"No schedule data found for {from_station} → {to_station} ({day_type.capitalize()}).\n"
+            f"No schedule data found for {from_station} ↔ {to_station} ({day_type.capitalize()}).\n"
             "This route may not be directly served by Caltrain."
         )
         return ConversationHandler.END
 
-    normal  = [t for t in trains if not t["label"]]
-    limited = [t for t in trains if t["label"] == " [Limited]"]
-    express = [t for t in trains if t["label"] == " [Express]"]
+    # Determine which direction is towards SF vs SJ based on STATIONS geographic order
+    from_idx = STATIONS.index(from_station)
+    to_idx = STATIONS.index(to_station)
+    if to_idx < from_idx:
+        # A→B is towards SF, B→A is towards SJ
+        trains_sf, trains_sj = trains_ab, trains_ba
+    else:
+        # A→B is towards SJ, B→A is towards SF
+        trains_sf, trains_sj = trains_ba, trains_ab
 
-    def fmt_section(emoji_label, items, not_available_msg):
-        if not items:
-            return f"{emoji_label}\nℹ️ {not_available_msg}"
-        rows = "\n".join(
-            f"Train {t['train']} — {t['depart_str']} → {t['arrive_str']} ({t['duration_mins']} mins)"
-            for t in items
+    def _next(trains, label):
+        """Return the next train of the given type after now, or None."""
+        return next(
+            (t for t in trains if t["label"] == label and t["depart"] >= now_time),
+            None
         )
-        return f"{emoji_label}\n{rows}"
+
+    def _duration(trains, label):
+        """Return duration_mins from the first available train of this type (either direction)."""
+        t = next((t for t in trains if t["label"] == label), None)
+        return t["duration_mins"] if t else None
+
+    def fmt_section(emoji, type_name, label, not_available_msg):
+        # Check if this type exists in either direction at all
+        all_of_type = [t for t in trains_sf + trains_sj if t["label"] == label]
+        if not all_of_type:
+            return f"{emoji} {type_name}\nℹ️ {not_available_msg}"
+
+        duration = _duration(trains_sf + trains_sj, label)
+        header = f"{emoji} {type_name} — ~{duration} mins" if duration else f"{emoji} {type_name}"
+
+        next_sf = _next(trains_sf, label)
+        next_sj = _next(trains_sj, label)
+
+        sf_line = (
+            f"  Towards San Francisco\n  Next: {next_sf['depart_str']} → {next_sf['arrive_str']}"
+            if next_sf else
+            "  Towards San Francisco\n  ℹ️ No more trains today."
+        )
+        sj_line = (
+            f"  Towards San Jose\n  Next: {next_sj['depart_str']} → {next_sj['arrive_str']}"
+            if next_sj else
+            "  Towards San Jose\n  ℹ️ No more trains today."
+        )
+        return f"{header}\n\n{sf_line}\n\n{sj_line}"
 
     sections = [
-        fmt_section("🚂 Normal trains:", normal, "No normal trains serve both stations."),
-        fmt_section("⚡ Limited trains:", limited, "Limited trains do not stop at one or both of these stations."),
-        fmt_section("🚄 Express trains:", express, "Express trains do not stop at one or both of these stations."),
+        fmt_section("🚂", "Normal train",  "",          "Normal trains do not serve both stations."),
+        fmt_section("⚡", "Limited train", " [Limited]", "Limited trains do not stop at one or both of these stations."),
+        fmt_section("🚄", "Express train", " [Express]", "Express trains do not stop at one or both of these stations."),
     ]
 
     body = "\n\n".join(sections)
-    header = f"🗺 {from_station} → {to_station} ({day_type.capitalize()})\n\n"
+    header = f"🗺 {from_station} ↔ {to_station} ({day_type.capitalize()})\n\n"
     await query.edit_message_text(header + body + "\n\n⚠️ Schedule-based only. Not real-time.")
     return ConversationHandler.END
 
