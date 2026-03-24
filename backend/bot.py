@@ -24,6 +24,22 @@ SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, 
 
 CANCEL_BTN = InlineKeyboardButton("Cancel", callback_data="cancel")
 
+WELCOME_TEXT = (
+    "👋 Welcome to *TimelyCal*\\!\n\n"
+    "I'm your personal Caltrain schedule assistant\\. Just ask me anything about train timings in plain English\\!\n\n"
+    "*Try asking:*\n"
+    "• When is the next train from Lawrence to SF?\n"
+    "• What's the last train from Palo Alto on weekends?\n"
+    "• How long does it take from Sunnyvale to San Francisco?\n\n"
+    "*Or use the commands:*\n"
+    "/next         \\- Next 3 trains from a station\n"
+    "/schedule     \\- Full day timetable for a station\n"
+    "/traveltime   \\- Travel time between two stations\n"
+    "/mystation    \\- Save your home station for quick access\n"
+    "/help         \\- Show help anytime\n\n"
+    "Let's get you on the right train\\! 🚂"
+)
+
 HELP_TEXT = (
     "I'm TimelyCal — ask me anything about the Caltrain schedule!\n\n"
     "Examples:\n"
@@ -364,6 +380,10 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(WELCOME_TEXT, parse_mode="MarkdownV2")
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT)
 
@@ -638,6 +658,7 @@ def get_application() -> Application:
     app.add_handler(CallbackQueryHandler(mystation_clear_callback, pattern="^mystation_clear$"))
 
     # Standard command handlers
+    app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("ask", ask_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("mystation", mystation_command))
