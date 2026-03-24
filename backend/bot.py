@@ -1,6 +1,7 @@
 import asyncio
 import os
 from dotenv import load_dotenv
+from db import save_user, get_user_count
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -638,11 +639,30 @@ async def show_travel_times(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ConversationHandler.END
 
 
+# ── User Tracking ─────────────────────────────────────────────────────────────
+
+async def _track_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Silently record every user who interacts with the bot."""
+    if update.effective_user and update.effective_chat:
+        save_user(
+            chat_id=update.effective_chat.id,
+            username=update.effective_user.username,
+        )
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    count = get_user_count()
+    await update.message.reply_text(f"👥 Total unique users: {count}")
+
+
 # ── Application Builder ───────────────────────────────────────────────────────
 
 def get_application() -> Application:
     """Build and return the Telegram Application with all handlers registered."""
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # Track every incoming message silently (group=-1 runs before all other handlers)
+    app.add_handler(MessageHandler(filters.ALL, _track_user), group=-1)
 
     # Guided schedule menu (ConversationHandler — must be registered before plain handlers)
     cancel_handler = CallbackQueryHandler(_cancel_callback, pattern="^cancel$")
@@ -699,6 +719,7 @@ def get_application() -> Application:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("mystation", mystation_command))
     app.add_handler(CommandHandler("echo", echo_command))
+    app.add_handler(CommandHandler("stats", stats_command))
 
     # Natural language fallback
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
