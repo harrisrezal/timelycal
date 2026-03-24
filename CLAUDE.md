@@ -8,6 +8,7 @@ timelycal/
 ├── backend/
 │   ├── main.py               # FastAPI entry point, includes routers
 │   ├── bot.py                # Telegram bot handlers + Application builder
+│   ├── db.py                 # Supabase user tracking (save_user, get_user_count)
 │   ├── routes/
 │   │   ├── telegram.py       # /webhook/telegram, /webhook/set-webhook, /webhook/info
 │   │   ├── query.py          # POST /api/query (RAG) — LIVE
@@ -16,13 +17,21 @@ timelycal/
 │   │   ├── pdf_parser.py     # Table-aware PDF parser (pdfplumber extract_tables)
 │   │   ├── embedder.py       # Vertex AI text-embedding-004 (768-dim), batch=20
 │   │   ├── gcs.py            # GCS upload/download (bucket: timelycal-pdfs)
-│   │   └── rag.py            # Supabase pgvector search + Gemini 2.5 Flash answer
+│   │   ├── rag.py            # Intent extraction + Supabase pgvector search + Gemini 2.5 Flash answer
+│   │   ├── schedule.py       # Direct schedule queries (get_next_trains, get_travel_times)
+│   │   └── user_prefs.py     # Per-user saved station preference
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── cloudbuild.yaml
 ├── web/                      # Phase 2 — Next.js
 ├── infra/                    # GCP infrastructure
 ├── tests/
+│   ├── requirements-test.txt # pytest, pytest-mock, pytest-cov, freezegun
+│   └── test_intent_extraction.py
+├── pytest.ini
+├── .github/
+│   └── workflows/
+│       └── deploy.yml        # CI: test job (all PRs) + deploy job (main only)
 ├── CLAUDE.md
 ├── README.md
 └── .gitignore
@@ -66,6 +75,7 @@ timelycal/
 ## Supabase
 - **Region:** West US (Oregon)
 - **Table:** `documents` — columns: `id`, `content` (text), `embedding` (vector(768)), `metadata` (jsonb)
+- **Table:** `users` — columns: `chat_id` (bigint PK), `username` (text), `first_seen` (timestamptz), `last_seen` (timestamptz)
 - **Required SQL function:**
 ```sql
 create or replace function match_documents(
@@ -121,16 +131,37 @@ curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload
 | `POST /api/query` | RAG query `{"question": "..."}` |
 | `POST /admin/upload` | PDF upload (multipart, field: `file`) |
 
+## Bot Commands
+| Command | Description |
+|---|---|
+| `/start` | Welcome message for new users with command overview |
+| `/schedule` | Guided menu: pick day → station → direction → see next 3 trains |
+| `/traveltime` | Pick origin → destination → see travel time per train type (Normal/Limited/Express) |
+| `/ask` | Freeform natural language query via RAG pipeline |
+| `/help` | List all commands |
+| `/mystation` | Save / view / clear your default station |
+| `/stats` | Show total unique users (admin info) |
+
 ## Architecture Decisions
 - **Embeddings:** Vertex AI `text-embedding-004` (768-dim), batch=20 (to stay under 20k token limit per request)
 - **LLM:** Google AI Studio `gemini-2.5-flash` via `google-genai` SDK — project has NO Vertex AI Gemini access, do not use Vertex AI for LLM calls
 - **PDF parsing:** `pdfplumber.extract_tables()` (table-aware) — each train row = one chunk: `"Station: time | Station: time | ..."`. Falls back to line-based if no tables
-- **Similarity search:** match_count=10
+- **RAG pipeline (2-call flow):** (1) `extract_intent()` — Gemini parses freeform question into structured JSON `{station, direction, day_type, query_type, time_context}`; (2) `query()` — similarity search with enriched prompt (current time PT, direction label, chain-of-thought instruction)
+- **Intent extraction fallback:** returns `{"station": null, ...}` on invalid JSON — query falls back to keyword search
+- **Similarity search:** match_count=10 (20 for first/last train queries)
+- **Train type classification:** 400–499 = Limited, 500–599 = Express, others = Normal (by train number)
+- **Travel time calculation:** match train numbers across two station DB chunks, diff departure times — direction inferred from `STATIONS` list geographic order (SF→SJ)
+- **User tracking:** every incoming message runs `_track_user` (group=-1, runs before all handlers) — upserts `chat_id` and `last_seen` in Supabase `users` table
 - **bot_app:** stored on `app.state.bot_app` via FastAPI lifespan, accessed in routes via `request.app.state.bot_app`
+- **CI:** GitHub Actions `test` job runs on every PR and push to main; `deploy` job has `needs: test` and only runs on push to main
 
 ## What's In Progress (Next Session Start Here)
-1. **Weekday PDF needs re-uploading** — Supabase was cleared, weekend re-uploaded (96 chunks), weekday upload failed mid-session. Next session: clear Supabase again and re-upload BOTH PDFs fresh using the commands above.
-2. **Test queries after re-upload** to verify table-aware chunking works correctly
+1. **Pending fixes for /traveltime output** (requirements confirmed but not yet implemented):
+   - Show only 1 representative example per train type (not all trains)
+   - Remove individual train numbers from output
+   - Show estimated duration in minutes per type only
+   - Show next departure + arrival for both directions (towards SF and towards SJ)
+2. **Terminal station direction edge case** — SF (index 0) should not show "towards SF" timings; Tamien/San Jose Diridon same for SJ direction
 3. Phase 2: Next.js web portal
 
 ## Known Errors & Fixes
@@ -142,3 +173,6 @@ curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload
 | `input token count > 20000` | Vertex AI embedding batch too large — use batch=20 in embedder.py |
 | Secret Manager permission denied | `gcloud projects add-iam-policy-binding my-telegram-bot-001 --member="serviceAccount:1077099046405-compute@developer.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"` |
 | Poor RAG results | Was using char-based chunking — fixed with table-aware `extract_tables()` parser |
+| `/help` and `/ask` silent crash | Both called `_is_cold_start()` which was deleted — removed stale calls (PR #5) |
+| `/start` fires twice on button tap | Telegram sends both a callback and `/start` text when tapping Start — fixed with `allow_reentry=True` and deduplication (PR #8, #10) |
+| MarkdownV2 parse error on `/start` | Reverted `/start` to plain text formatting (PR #10) |
