@@ -119,16 +119,18 @@ async def show_both_directions(update: Update, context: ContextTypes.DEFAULT_TYP
             lines.append(f"Train {t['train']}{_train_label(t['train'])} — {t['time_str']} (in {diff} mins)")
         return "\n".join(lines)
 
-    sf_trains = format_trains("sf")
-    sj_trains = format_trains("sj")
+    _SF_TERMINAL = "San Francisco"
+    _SJ_TERMINALS = {"San Jose Diridon", "Tamien"}
+    show_sf = station not in _SJ_TERMINALS
+    show_sj = station != _SF_TERMINAL
 
-    text = (
-        f"📍 {station}\n"
-        f"🗓 {date_str} | {time_str} ({day_label})\n\n"
-        f"➡️ Towards San Francisco\n{sf_trains}\n\n"
-        f"➡️ Towards San Jose\n{sj_trains}\n\n"
-        "⚠️ Schedule-based only. Not real-time."
-    )
+    parts = [f"📍 {station}\n🗓 {date_str} | {time_str} ({day_label})"]
+    if show_sf:
+        parts.append(f"➡️ Towards San Francisco\n{format_trains('sf')}")
+    if show_sj:
+        parts.append(f"➡️ Towards San Jose\n{format_trains('sj')}")
+    parts.append("⚠️ Schedule-based only. Not real-time.")
+    text = "\n\n".join(parts)
 
     await query.edit_message_text(text)
     return ConversationHandler.END
@@ -429,16 +431,18 @@ async def mystation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"Train {t['train']}{_train_label(t['train'])} — {t['time_str']} (in {diff} mins)")
         return "\n".join(lines)
 
-    sf_trains = format_trains("sf")
-    sj_trains = format_trains("sj")
+    _SF_TERMINAL = "San Francisco"
+    _SJ_TERMINALS = {"San Jose Diridon", "Tamien"}
+    show_sf = station not in _SJ_TERMINALS
+    show_sj = station != _SF_TERMINAL
 
-    text = (
-        f"📍 {station}\n"
-        f"🗓 {date_str} | {time_str} ({day_label})\n\n"
-        f"➡️ Towards San Francisco\n{sf_trains}\n\n"
-        f"➡️ Towards San Jose\n{sj_trains}\n\n"
-        "⚠️ Schedule-based only. Not real-time."
-    )
+    parts = [f"📍 {station}\n🗓 {date_str} | {time_str} ({day_label})"]
+    if show_sf:
+        parts.append(f"➡️ Towards San Francisco\n{format_trains('sf')}")
+    if show_sj:
+        parts.append(f"➡️ Towards San Jose\n{format_trains('sj')}")
+    parts.append("⚠️ Schedule-based only. Not real-time.")
+    text = "\n\n".join(parts)
 
     keyboard = [[
         InlineKeyboardButton("Change station", callback_data="mystation_change"),
