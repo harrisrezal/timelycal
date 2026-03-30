@@ -66,4 +66,6 @@ jobs:
             --project ${{ secrets.GCP_PROJECT }}
 
       - name: Re-register Telegram webhook
-        run: curl -sf -H "x-api-key: ${{ secrets.ADMIN_API_KEY }}" ${{ secrets.SERVICE_URL }}/webhook/set-webhook
+        run: |
+          ADMIN_KEY=$(gcloud secrets versions access latest --secret=ADMIN_API_KEY --project=${{ secrets.GCP_PROJECT }})
+          curl -sf -H "x-api-key: ${ADMIN_KEY}" ${{ secrets.SERVICE_URL }}/webhook/set-webhook
