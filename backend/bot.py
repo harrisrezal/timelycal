@@ -504,15 +504,20 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for plain text messages — queries the RAG pipeline."""
     from services.rag import query
 
-
     text = update.message.text
-    task = asyncio.create_task(asyncio.to_thread(query, text))
-
-    done, _ = await asyncio.wait([task], timeout=2.0)
-    if not done:
-        await update.message.reply_text("⏳ Still searching, please wait a moment...")
-
-    answer = await task
+    try:
+        answer = await asyncio.wait_for(
+            asyncio.to_thread(query, text),
+            timeout=10.0,
+        )
+    except asyncio.TimeoutError:
+        await update.message.reply_text(
+            "⏱ Sorry, that took too long. Please try again or use /schedule for the menu."
+        )
+        return
+    except Exception:
+        await update.message.reply_text("❌ Something went wrong. Please try again.")
+        return
     await update.message.reply_text(answer)
 
 
@@ -643,6 +648,24 @@ async def show_travel_times(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ConversationHandler.END
 
 
+# ── Timeout & Error Handlers ──────────────────────────────────────────────────
+
+async def _conversation_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Fired when a ConversationHandler times out due to inactivity."""
+    await update.effective_message.reply_text(
+        "⏱ Session timed out. Please start again."
+    )
+
+
+async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Global error handler — logs and notifies the user on any unhandled exception."""
+    logger.error("Unhandled exception", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        await update.effective_message.reply_text(
+            "❌ Something went wrong. Please try again."
+        )
+
+
 # ── User Tracking ─────────────────────────────────────────────────────────────
 
 async def _track_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -671,13 +694,20 @@ def get_application() -> Application:
     # Guided schedule menu (ConversationHandler — must be registered before plain handlers)
     cancel_handler = CallbackQueryHandler(_cancel_callback, pattern="^cancel$")
 
+    timeout_handler = [
+        MessageHandler(filters.ALL, _conversation_timeout),
+        CallbackQueryHandler(_conversation_timeout),
+    ]
+
     schedule_conv = ConversationHandler(
         entry_points=[CommandHandler("next", ask_day_type)],
         states={
             SELECT_STATION: [cancel_handler, CallbackQueryHandler(show_both_directions, pattern="^sta:")],
+            ConversationHandler.TIMEOUT: timeout_handler,
         },
         fallbacks=[CommandHandler("cancel", cancel_schedule)],
         allow_reentry=True,
+        conversation_timeout=30,
     )
     app.add_handler(schedule_conv)
 
@@ -693,9 +723,11 @@ def get_application() -> Application:
             SELECT_DAY: [cancel_handler, CallbackQueryHandler(ask_timing_station, pattern="^tday:")],
             SELECT_STATION: [cancel_handler, CallbackQueryHandler(ask_timing_direction, pattern="^tsta:")],
             SELECT_DIRECTION: [cancel_handler, CallbackQueryHandler(show_timing_results, pattern="^tdir:")],
+            ConversationHandler.TIMEOUT: timeout_handler,
         },
         fallbacks=[CommandHandler("cancel", cancel_schedule)],
         allow_reentry=True,
+        conversation_timeout=30,
     )
     app.add_handler(timing_conv)
 
@@ -705,9 +737,11 @@ def get_application() -> Application:
         states={
             SELECT_TT_FROM: [cancel_handler, CallbackQueryHandler(ask_tt_to, pattern="^tt_from:")],
             SELECT_TT_TO: [cancel_handler, CallbackQueryHandler(show_travel_times, pattern="^tt_to:")],
+            ConversationHandler.TIMEOUT: timeout_handler,
         },
         fallbacks=[CommandHandler("cancel", cancel_schedule)],
         allow_reentry=True,
+        conversation_timeout=30,
     )
     app.add_handler(traveltime_conv)
 
@@ -728,5 +762,8 @@ def get_application() -> Application:
     # Natural language fallback
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.COMMAND, handle_unknown))
+
+    # Global error handler
+    app.add_error_handler(_error_handler)
 
     return app
