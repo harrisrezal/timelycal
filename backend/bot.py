@@ -121,8 +121,8 @@ async def show_both_directions(update: Update, context: ContextTypes.DEFAULT_TYP
 
     _SF_TERMINAL = "San Francisco"
     _SJ_TERMINALS = {"San Jose Diridon", "Tamien"}
-    show_sf = station not in _SJ_TERMINALS
-    show_sj = station != _SF_TERMINAL
+    show_sf = station != _SF_TERMINAL
+    show_sj = station not in _SJ_TERMINALS
 
     parts = [f"📍 {station}\n🗓 {date_str} | {time_str} ({day_label})"]
     if show_sf:
@@ -433,8 +433,8 @@ async def mystation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     _SF_TERMINAL = "San Francisco"
     _SJ_TERMINALS = {"San Jose Diridon", "Tamien"}
-    show_sf = station not in _SJ_TERMINALS
-    show_sj = station != _SF_TERMINAL
+    show_sf = station != _SF_TERMINAL
+    show_sj = station not in _SJ_TERMINALS
 
     parts = [f"📍 {station}\n🗓 {date_str} | {time_str} ({day_label})"]
     if show_sf:
