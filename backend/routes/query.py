@@ -1,15 +1,19 @@
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from services.rag import query as rag_query
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 class QueryRequest(BaseModel):
-    question: str
+    question: str = Field(..., max_length=2000)
 
 
 @router.post("/query")
-async def query(request: QueryRequest):
-    answer = rag_query(request.question)
-    return {"question": request.question, "answer": answer}
+@limiter.limit("20/minute")
+async def query(request: Request, body: QueryRequest):
+    answer = rag_query(body.question)
+    return {"question": body.question, "answer": answer}

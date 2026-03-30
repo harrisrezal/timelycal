@@ -71,6 +71,8 @@ timelycal/
 - `SUPABASE_URL` — `https://egjgppunsrickvkmnhib.supabase.co/`
 - `SUPABASE_KEY` — Supabase secret key
 - `GEMINI_API_KEY` — Google AI Studio API key (NOT Vertex AI Gemini)
+- `ADMIN_API_KEY` — protects `/admin/upload`, `/webhook/set-webhook`, `/webhook/info` (pass as `x-api-key` header)
+- `WEBHOOK_SECRET` — Telegram signs every webhook request with this; verified via `X-Telegram-Bot-API-Secret-Token` header
 
 ## Supabase
 - **Region:** West US (Oregon)
@@ -102,7 +104,7 @@ gcloud run deploy telegram-bot \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-secrets "BOT_TOKEN=BOT_TOKEN:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
+  --set-secrets "BOT_TOKEN=BOT_TOKEN:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,ADMIN_API_KEY=ADMIN_API_KEY:latest,WEBHOOK_SECRET=WEBHOOK_SECRET:latest" \
   --set-env-vars "GCS_BUCKET=timelycal-pdfs,GCP_PROJECT=my-telegram-bot-001,GCP_REGION=us-central1" \
   --min-instances 0 \
   --max-instances 1 \
@@ -110,15 +112,17 @@ gcloud run deploy telegram-bot \
   --timeout 300
 ```
 
-After deploying: `curl https://telegram-bot-1077099046405.us-central1.run.app/webhook/set-webhook`
+After deploying: `curl -H "x-api-key: YOUR_ADMIN_API_KEY" https://telegram-bot-1077099046405.us-central1.run.app/webhook/set-webhook`
 
 ## Re-uploading PDFs
 ```bash
 # 1. Clear Supabase: run "delete from documents;" in SQL Editor
 # 2. Re-upload:
 curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload \
+  -H "x-api-key: YOUR_ADMIN_API_KEY" \
   -F "file=@/Users/harrischew/Downloads/WeekendCaltrain-schedule.pdf"
 curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload \
+  -H "x-api-key: YOUR_ADMIN_API_KEY" \
   -F "file=@/Users/harrischew/Downloads/WeekdayCaltrain-schedule.pdf"
 ```
 
