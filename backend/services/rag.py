@@ -187,6 +187,7 @@ def query(question: str) -> str:
     prompt = f"""You are TimelyCal, a Caltrain schedule assistant. Answer the user's question using ONLY the schedule data provided below.
 
 Rules:
+- The schedule is a recurring weekly timetable — "tomorrow", "next Monday", etc. refer to the day type (weekday/weekend), not a specific calendar date. Use the provided schedule type to answer.
 - Always include the train number and exact departure time in your answer
 - If asked for the next train, list up to 3 upcoming trains with their times
 - If asked for first/last train, scan ALL provided chunks and find the earliest/latest time
