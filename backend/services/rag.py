@@ -107,6 +107,7 @@ Question: {question}"""
         response = gemini.models.generate_content(
             model="gemini-2.5-flash",
             contents=extraction_prompt,
+            config={"thinking_config": {"thinking_budget": 0}},
         )
         raw = response.text.strip()
         # Strip markdown code fences if present
@@ -216,5 +217,6 @@ Answer:"""
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
+        config={"thinking_config": {"thinking_budget": 0}},
     )
     return response.text
