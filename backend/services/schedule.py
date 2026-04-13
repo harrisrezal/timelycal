@@ -231,3 +231,25 @@ def get_all_trains(station: str, day_type: str, direction: str) -> list[dict]:
 
     candidates.sort(key=lambda c: c["time"])
     return candidates
+
+
+def count_stops(from_station: str, to_station: str) -> int | None:
+    """Number of stops between two stations (exclusive of endpoints). Returns None if either station is unknown."""
+    try:
+        return abs(STATIONS.index(from_station) - STATIONS.index(to_station))
+    except ValueError:
+        return None
+
+
+def get_arrive_by(from_station: str, to_station: str, target_time_str: str, day_type: str) -> dict | None:
+    """
+    Returns the latest-departing train that arrives at to_station by target_time_str.
+    target_time_str accepts formats like '6:00pm', '6pm', '18:00'.
+    Returns a get_travel_times() dict, or None if no valid train found.
+    """
+    target = _parse_time(target_time_str)
+    if target is None:
+        return None
+    trains = get_travel_times(from_station, to_station, day_type)
+    valid = [t for t in trains if t["arrive"] <= target]
+    return valid[-1] if valid else None
