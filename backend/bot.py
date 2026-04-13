@@ -1,10 +1,13 @@
 import asyncio
 import os
+import time
+from collections import defaultdict
 from dotenv import load_dotenv
 from db import save_user, get_user_count
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CallbackQueryHandler,
     CommandHandler,
     ConversationHandler,
@@ -666,6 +669,30 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# ── Per-User Rate Limiting ────────────────────────────────────────────────────
+
+_user_message_times: dict[int, list[float]] = defaultdict(list)
+_RATE_WINDOW = 60     # seconds
+_RATE_MAX_MSGS = 10   # max messages per window
+
+
+async def _rate_limit_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Block users sending more than 10 messages per minute."""
+    if not update.effective_chat or not update.effective_message:
+        return
+    chat_id = update.effective_chat.id
+    now = time.time()
+    window_start = now - _RATE_WINDOW
+    times = [t for t in _user_message_times[chat_id] if t > window_start]
+    times.append(now)
+    _user_message_times[chat_id] = times
+    if len(times) > _RATE_MAX_MSGS:
+        await update.effective_message.reply_text(
+            "⚠️ You're sending messages too fast. Please wait a moment."
+        )
+        raise ApplicationHandlerStop
+
+
 # ── User Tracking ─────────────────────────────────────────────────────────────
 
 async def _track_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -687,6 +714,9 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def get_application() -> Application:
     """Build and return the Telegram Application with all handlers registered."""
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # Rate limit per user (group=-2 runs before everything else)
+    app.add_handler(MessageHandler(filters.ALL, _rate_limit_user), group=-2)
 
     # Track every incoming message silently (group=-1 runs before all other handlers)
     app.add_handler(MessageHandler(filters.ALL, _track_user), group=-1)

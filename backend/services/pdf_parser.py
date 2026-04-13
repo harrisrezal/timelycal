@@ -1,5 +1,18 @@
 import io
+import re
+
 import pdfplumber
+
+# Match a bare time suffix: "7:15a" or "1:09p" (no trailing 'm')
+_TIME_SUFFIX_RE = re.compile(r"^(\d{1,2}:\d{2})([ap])$", re.IGNORECASE)
+
+
+def _normalize_cell_time(value: str) -> str:
+    """'1:09p' → '1:09pm', '7:15a' → '7:15am'. Leaves other values unchanged."""
+    m = _TIME_SUFFIX_RE.match(value)
+    if m:
+        return m.group(1) + m.group(2).lower() + "m"
+    return value
 
 
 def parse_pdf(file_bytes: bytes) -> list[str]:
@@ -47,7 +60,7 @@ def _parse_table(table: list[list]) -> list[str]:
         for header, value in zip(headers, cells):
             if value and value != "--" and value != "-":
                 label = header if header else "Info"
-                parts.append(f"{label}: {value}")
+                parts.append(f"{label}: {_normalize_cell_time(value)}")
 
         if parts:
             chunks.append(" | ".join(parts))

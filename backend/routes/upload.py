@@ -1,6 +1,7 @@
 import logging
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
+from routes.telegram import verify_admin
 from services.pdf_parser import parse_pdf
 from services.gcs import upload_file
 from services.embedder import embed
@@ -9,9 +10,11 @@ from services.rag import store_chunks
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
+
 
 @router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(file: UploadFile = File(...), _: None = Depends(verify_admin)):
     """
     Upload a Caltrain schedule PDF.
     Parses, stores in GCS, embeds with Vertex AI, and saves to Supabase.
@@ -20,6 +23,10 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
     file_bytes = await file.read()
+
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 5MB limit.")
+
     filename = file.filename
 
     # 1. Upload raw PDF to GCS

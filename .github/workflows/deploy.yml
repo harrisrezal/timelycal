@@ -57,7 +57,7 @@ jobs:
             --platform managed \
             --region us-central1 \
             --allow-unauthenticated \
-            --set-secrets "BOT_TOKEN=BOT_TOKEN:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
+            --set-secrets "BOT_TOKEN=BOT_TOKEN:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,ADMIN_API_KEY=ADMIN_API_KEY:latest,WEBHOOK_SECRET=WEBHOOK_SECRET:latest" \
             --set-env-vars "GCS_BUCKET=timelycal-pdfs,GCP_PROJECT=my-telegram-bot-001,GCP_REGION=us-central1" \
             --min-instances 0 \
             --max-instances 1 \
@@ -65,5 +65,3 @@ jobs:
             --timeout 300 \
             --project ${{ secrets.GCP_PROJECT }}
 
-      - name: Re-register Telegram webhook
-        run: curl -sf ${{ secrets.SERVICE_URL }}/webhook/set-webhook
