@@ -159,7 +159,7 @@ def query(question: str) -> str:
             return f"There are {n} stop(s) between {from_st} and {to_st}."
 
     elif q_type == "travel_duration" and from_st and to_st:
-        trains = get_travel_times(from_st, to_st, day)
+        trains = get_travel_times(from_st, to_st)
         if trains:
             # Clean label: "" → "Normal", " [Limited]" → "Limited", " [Express]" → "Express"
             by_label: dict[str, int] = {}
@@ -171,7 +171,7 @@ def query(question: str) -> str:
             return f"Travel time from {from_st} to {to_st}:\n" + "\n".join(lines)
 
     elif q_type == "arrive_by" and from_st and to_st and intent.get("target_time"):
-        train = get_arrive_by(from_st, to_st, intent["target_time"], day)
+        train = get_arrive_by(from_st, to_st, intent["target_time"])
         if train:
             return (
                 f"To arrive at {to_st} by {intent['target_time']}, take "

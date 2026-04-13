@@ -124,9 +124,10 @@ def get_next_trains(
     return candidates[:n]
 
 
-def _extract_train_times(station: str, day_type: str) -> dict[int, time]:
+def _extract_train_times(station: str) -> dict[int, time]:
     """
-    Query DB for chunks matching station+day_type and return {train_num: departure_time}.
+    Query DB for chunks matching the station and return {train_num: departure_time}.
+    Not filtered by day_type — travel time is the same regardless of weekday/weekend.
     Used internally by get_travel_times().
     """
     client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -138,8 +139,7 @@ def _extract_train_times(station: str, day_type: str) -> dict[int, time]:
     ).data
     rows = [
         r for r in rows
-        if day_type in r.get("metadata", {}).get("source", "").lower()
-        and re.search(rf':\s*{re.escape(station)}\s*(?:\||$)', r["content"], re.IGNORECASE)
+        if re.search(rf':\s*{re.escape(station)}\s*(?:\||$)', r["content"], re.IGNORECASE)
     ]
 
     times: dict[int, time] = {}
@@ -153,9 +153,10 @@ def _extract_train_times(station: str, day_type: str) -> dict[int, time]:
     return times
 
 
-def get_travel_times(from_station: str, to_station: str, day_type: str) -> list[dict]:
+def get_travel_times(from_station: str, to_station: str) -> list[dict]:
     """
-    Return travel times for all trains serving both stations on the given day.
+    Return travel times for all trains serving both stations.
+    Day-type agnostic — travel duration is the same on weekdays and weekends.
     Direction is inferred automatically from the STATIONS geographic order.
 
     Each result dict: {"train": int, "depart": time, "depart_str": str,
@@ -166,8 +167,8 @@ def get_travel_times(from_station: str, to_station: str, day_type: str) -> list[
     to_idx = STATIONS.index(to_station)
     want_sf = to_idx < from_idx  # travelling towards SF if destination is earlier in list
 
-    from_times = _extract_train_times(from_station, day_type)
-    to_times = _extract_train_times(to_station, day_type)
+    from_times = _extract_train_times(from_station)
+    to_times = _extract_train_times(to_station)
 
     results = []
     for train_num, depart in from_times.items():
@@ -241,7 +242,7 @@ def count_stops(from_station: str, to_station: str) -> int | None:
         return None
 
 
-def get_arrive_by(from_station: str, to_station: str, target_time_str: str, day_type: str) -> dict | None:
+def get_arrive_by(from_station: str, to_station: str, target_time_str: str) -> dict | None:
     """
     Returns the latest-departing train that arrives at to_station by target_time_str.
     target_time_str accepts formats like '6:00pm', '6pm', '18:00'.
@@ -250,6 +251,6 @@ def get_arrive_by(from_station: str, to_station: str, target_time_str: str, day_
     target = _parse_time(target_time_str)
     if target is None:
         return None
-    trains = get_travel_times(from_station, to_station, day_type)
+    trains = get_travel_times(from_station, to_station)
     valid = [t for t in trains if t["arrive"] <= target]
     return valid[-1] if valid else None
