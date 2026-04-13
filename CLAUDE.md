@@ -55,8 +55,12 @@ timelycal/
    gh pr create --title "type: short description" --body "..."
    ```
 4. PR body must include: **Summary** (bullet points), **Test plan** (checklist)
-5. Wait for the owner (harrischew) to review and approve before merging to `main`
-6. CI/CD pipeline runs automatically on merge to `main`
+5. After creating the PR, immediately switch back to `main`:
+   ```bash
+   git checkout main
+   ```
+6. Wait for the owner (harrischew) to review and approve before merging to `main`
+7. CI/CD pipeline runs automatically on merge to `main`
 
 **Branch naming:**
 | Prefix | When to use |
