@@ -41,22 +41,36 @@ timelycal/
 
 **Every change must follow this process — no direct commits to `main`:**
 
-1. Create a new branch for the feature or fix:
+1. Always branch from `main` (or from a feature branch if the fix depends on unreleased code):
    ```bash
-   git checkout -b feat/your-feature-name
-   # or
-   git checkout -b fix/your-fix-name
+   git checkout main && git checkout -b feat/your-feature-name
+   git checkout main && git checkout -b fix/your-fix-name
+   git checkout main && git checkout -b docs/your-doc-name
+   git checkout main && git checkout -b chore/your-chore-name
    ```
-2. Make changes, commit to the branch
-3. Push the branch and open a PR:
+2. One concern per branch — do not bundle unrelated fixes into the same branch
+3. Commit to the branch, then push and open a PR:
    ```bash
    git push origin feat/your-feature-name
-   gh pr create --title "..." --body "..."
+   gh pr create --title "type: short description" --body "..."
    ```
-4. Wait for the owner (harrischew) to review and approve the PR on GitHub before merging to `main`
-5. CI/CD pipeline runs automatically on merge to `main`
+4. PR body must include: **Summary** (bullet points), **Test plan** (checklist)
+5. Wait for the owner (harrischew) to review and approve before merging to `main`
+6. CI/CD pipeline runs automatically on merge to `main`
 
-**Do not push directly to `main`.** All merges must go through an approved PR.
+**Branch naming:**
+| Prefix | When to use |
+|---|---|
+| `feat/` | New user-facing feature |
+| `fix/` | Bug fix |
+| `docs/` | Documentation only |
+| `chore/` | Tooling, config, CI changes |
+| `refactor/` | Code restructure with no behaviour change |
+
+**Do not:**
+- Push directly to `main`
+- Force-push a branch that has an open PR (resets reviewer context)
+- Commit unrelated changes on the same branch
 
 ## Infrastructure
 - **GCP Project:** `my-telegram-bot-001`
@@ -115,11 +129,13 @@ After deploying: `curl https://telegram-bot-1077099046405.us-central1.run.app/we
 ## Re-uploading PDFs
 ```bash
 # 1. Clear Supabase: run "delete from documents;" in SQL Editor
-# 2. Re-upload:
+# 2. Re-upload (admin API key is in GCP Secret Manager as ADMIN_API_KEY — no trailing % from shell):
 curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload \
-  -F "file=@/Users/harrischew/Downloads/WeekendCaltrain-schedule.pdf"
-curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload \
+  -H "x-api-key: <ADMIN_API_KEY>" \
   -F "file=@/Users/harrischew/Downloads/WeekdayCaltrain-schedule.pdf"
+curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload \
+  -H "x-api-key: <ADMIN_API_KEY>" \
+  -F "file=@/Users/harrischew/Downloads/WeekendCaltrain-schedule.pdf"
 ```
 
 ## Key Endpoints
@@ -144,10 +160,12 @@ curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload
 
 ## Architecture Decisions
 - **Embeddings:** Vertex AI `text-embedding-004` (768-dim), batch=20 (to stay under 20k token limit per request)
-- **LLM:** Google AI Studio `gemini-2.5-flash` via `google-genai` SDK — project has NO Vertex AI Gemini access, do not use Vertex AI for LLM calls
-- **PDF parsing:** `pdfplumber.extract_tables()` (table-aware) — each train row = one chunk: `"Station: time | Station: time | ..."`. Falls back to line-based if no tables
-- **RAG pipeline (2-call flow):** (1) `extract_intent()` — Gemini parses freeform question into structured JSON `{station, direction, day_type, query_type, time_context}`; (2) `query()` — similarity search with enriched prompt (current time PT, direction label, chain-of-thought instruction)
+- **LLM:** Google AI Studio `gemini-2.5-flash` via `google-genai` SDK — project has NO Vertex AI Gemini access, do not use Vertex AI for LLM calls. Thinking is disabled (`thinking_budget: 0`) on both Gemini calls to keep latency under 5s
+- **PDF parsing:** `pdfplumber.extract_tables()` (table-aware) — each train row = one chunk: `"Station: 7:15am | Station: 8:01am | ..."`. Times are normalised to `am`/`pm` at parse time. Falls back to line-based if no tables
+- **RAG pipeline (2-call flow):** (1) `extract_intent()` — Gemini parses freeform question into structured JSON `{station, from_station, to_station, target_time, direction, day_type, query_type, time_context}`; (2) `query()` — similarity search with enriched prompt (current time PT, direction label, chain-of-thought instruction)
+- **Short-circuit query types:** `stops_count`, `travel_duration`, `arrive_by` resolve before embedding — no vector search or Gemini synthesis needed
 - **Intent extraction fallback:** returns `{"station": null, ...}` on invalid JSON — query falls back to keyword search
+- **Recurring timetable rule:** the RAG answer prompt explicitly states the schedule is recurring weekly — "tomorrow" = weekday/weekend type, not a calendar date
 - **Similarity search:** match_count=10 (20 for first/last train queries)
 - **Train type classification:** 400–499 = Limited, 500–599 = Express, others = Normal (by train number)
 - **Travel time calculation:** match train numbers across two station DB chunks, diff departure times — direction inferred from `STATIONS` list geographic order (SF→SJ)
@@ -156,13 +174,16 @@ curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload
 - **CI:** GitHub Actions `test` job runs on every PR and push to main; `deploy` job has `needs: test` and only runs on push to main
 
 ## What's In Progress (Next Session Start Here)
-1. **Pending fixes for /traveltime output** (requirements confirmed but not yet implemented):
-   - Show only 1 representative example per train type (not all trains)
-   - Remove individual train numbers from output
-   - Show estimated duration in minutes per type only
-   - Show next departure + arrival for both directions (towards SF and towards SJ)
-2. **Terminal station direction edge case** — SF (index 0) should not show "towards SF" timings; Tamien/San Jose Diridon same for SJ direction
-3. Phase 2: Next.js web portal
+**Open PRs (pending review + merge):**
+- PR #22 `fix/disable-gemini-thinking` — disables Gemini 2.5 Flash thinking to fix /ask latency
+- PR #23 `docs/update-readme` — updated README with current commands and AI pipeline detail
+- PR #24 `fix/debug-lawrence-rag-query` — fixes "tomorrow" queries returning no results
+- PR #25 `feat/natural-language-query-expansion` — adds stops_count, travel_duration, arrive_by query types + smart redirects
+- PR open `fix/travel-duration-label-format` — fixes travel_duration showing clean labels and single duration
+
+**After merging all PRs:**
+- Clear Supabase `documents` table and re-upload both PDFs (old `7:15a` format rows still exist alongside new `7:15am` rows from re-upload without prior clear)
+- Phase 2: Next.js web portal
 
 ## Known Errors & Fixes
 | Error | Fix |
@@ -176,3 +197,7 @@ curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload
 | `/help` and `/ask` silent crash | Both called `_is_cold_start()` which was deleted — removed stale calls (PR #5) |
 | `/start` fires twice on button tap | Telegram sends both a callback and `/start` text when tapping Start — fixed with `allow_reentry=True` and deduplication (PR #8, #10) |
 | MarkdownV2 parse error on `/start` | Reverted `/start` to plain text formatting (PR #10) |
+| `/ask "tomorrow from X"` returns "I don't have that information" | Gemini treated "tomorrow" as a calendar date — fixed by adding recurring timetable rule to answer prompt (PR #24) |
+| `/ask` 30-40s latency / timeout | Gemini 2.5 Flash thinking enabled by default — fixed with `thinking_budget: 0` on both generate_content calls (PR #22) |
+| Duplicate rows in Supabase after re-upload | Always run `delete from documents;` in Supabase SQL Editor before re-uploading PDFs |
+| Admin upload returns 403 Forbidden | Trailing `%` from zsh shell included in API key — copy key without the trailing `%` |
