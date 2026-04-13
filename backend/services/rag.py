@@ -161,14 +161,13 @@ def query(question: str) -> str:
     elif q_type == "travel_duration" and from_st and to_st:
         trains = get_travel_times(from_st, to_st, day)
         if trains:
-            by_label: dict[str, list[int]] = {}
+            # Clean label: "" → "Normal", " [Limited]" → "Limited", " [Express]" → "Express"
+            by_label: dict[str, int] = {}
             for t in trains:
-                label = t["label"] or "Normal"
-                by_label.setdefault(label, []).append(t["duration_mins"])
-            lines = [
-                f"{lbl}: ~{min(durations)}–{max(durations)} mins"
-                for lbl, durations in by_label.items()
-            ]
+                label = t["label"].strip().strip("[]") or "Normal"
+                if label not in by_label:
+                    by_label[label] = t["duration_mins"]
+            lines = [f"{lbl}: {mins} mins" for lbl, mins in by_label.items()]
             return f"Travel time from {from_st} to {to_st}:\n" + "\n".join(lines)
 
     elif q_type == "arrive_by" and from_st and to_st and intent.get("target_time"):
