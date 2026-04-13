@@ -6,7 +6,7 @@ from supabase import create_client, Client
 import pytz
 
 from services.embedder import embed
-from services.schedule import STATIONS, get_travel_times, get_arrive_by, count_stops, _train_label
+from services.schedule import STATIONS, get_next_trains, get_travel_times, get_arrive_by, count_stops, _train_label
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -182,6 +182,30 @@ def query(question: str) -> str:
             f"No trains from {from_st} to {to_st} arrive by {intent['target_time']}. "
             f"Try an earlier target time or check /traveltime for all options."
         )
+
+    elif q_type == "next_train" and intent.get("station"):
+        station = intent["station"]
+        direction = intent.get("direction")  # "sf", "sj", or None
+        if direction in ("sf", "sj"):
+            trains = get_next_trains(station, day, direction)
+            label = "towards San Francisco" if direction == "sf" else "towards San Jose"
+            if not trains:
+                return f"No upcoming trains at {station} {label}."
+            lines = [f"Train {t['train']} at {t['time_str']}" for t in trains]
+            return f"Next trains at {station} {label}:\n" + "\n".join(lines)
+        else:
+            trains_sf = get_next_trains(station, day, "sf")
+            trains_sj = get_next_trains(station, day, "sj")
+            parts = []
+            if trains_sf:
+                lines = [f"Train {t['train']} at {t['time_str']}" for t in trains_sf]
+                parts.append("Towards San Francisco:\n" + "\n".join(lines))
+            if trains_sj:
+                lines = [f"Train {t['train']} at {t['time_str']}" for t in trains_sj]
+                parts.append("Towards San Jose:\n" + "\n".join(lines))
+            if not parts:
+                return f"No upcoming trains found at {station}."
+            return f"Next trains at {station}:\n\n" + "\n\n".join(parts)
 
     # 3. Embed the question
     question_embedding = embed([question])[0]
