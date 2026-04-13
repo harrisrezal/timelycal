@@ -41,12 +41,16 @@ timelycal/
 
 **Every change must follow this process — no direct commits to `main`:**
 
-1. Always branch from `main` (or from a feature branch if the fix depends on unreleased code):
+1. Always pull the latest `main` before creating a new branch:
    ```bash
-   git checkout main && git checkout -b feat/your-feature-name
-   git checkout main && git checkout -b fix/your-fix-name
-   git checkout main && git checkout -b docs/your-doc-name
-   git checkout main && git checkout -b chore/your-chore-name
+   git checkout main && git pull origin main
+   ```
+   Then create your branch:
+   ```bash
+   git checkout -b feat/your-feature-name
+   git checkout -b fix/your-fix-name
+   git checkout -b docs/your-doc-name
+   git checkout -b chore/your-chore-name
    ```
 2. One concern per branch — do not bundle unrelated fixes into the same branch
 3. Commit to the branch, then push and open a PR:
