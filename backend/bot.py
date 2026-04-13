@@ -583,8 +583,8 @@ async def show_travel_times(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     day_type = "weekday" if now_dt.weekday() < 5 else "weekend"
 
     # Fetch both directions: A→B and B→A (swapping from/to flips direction automatically)
-    trains_ab = get_travel_times(from_station, to_station, day_type)
-    trains_ba = get_travel_times(to_station, from_station, day_type)
+    trains_ab = get_travel_times(from_station, to_station)
+    trains_ba = get_travel_times(to_station, from_station)
 
     if not trains_ab and not trains_ba:
         await query.edit_message_text(
