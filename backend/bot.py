@@ -707,8 +707,7 @@ async def show_fare(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"🎫 Fare: {from_station} → {to_station}\n\n"
         f"Zone {fare_info['from_zone']} → Zone {fare_info['to_zone']} "
         f"({fare_info['zones_spanned']} {zones_word})\n\n"
-        f"One-way: ${fare_info['fare']:.2f}\n\n"
-        "⚠️ Fares shown are approximate. Check clipper.com for exact pricing."
+        f"One-way: ${fare_info['fare']:.2f}"
     )
     await query.edit_message_text(msg)
     return ConversationHandler.END
