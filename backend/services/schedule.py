@@ -254,3 +254,43 @@ def get_arrive_by(from_station: str, to_station: str, target_time_str: str) -> d
     trains = get_travel_times(from_station, to_station)
     valid = [t for t in trains if t["arrive"] <= target]
     return valid[-1] if valid else None
+
+
+# ── Fare Lookup ───────────────────────────────────────────────────────────────
+
+# Zone map — Zone 1 (SF) to Zone 6 (Tamien)
+STATION_ZONES: dict[str, int] = {
+    "San Francisco": 1, "22nd Street": 1,
+    "Bayshore": 2, "S. San Francisco": 2, "San Bruno": 2, "Millbrae": 2,
+    "Broadway": 3, "Burlingame": 3, "San Mateo": 3, "Hayward Park": 3,
+    "Hillsdale": 3, "Belmont": 3, "San Carlos": 3, "Redwood City": 3,
+    "Menlo Park": 4, "Palo Alto": 4, "California Avenue": 4,
+    "San Antonio": 4, "Mountain View": 4, "Sunnyvale": 4,
+    "Lawrence": 5, "Santa Clara": 5, "College Park": 5,
+    "San Jose Diridon": 6, "Tamien": 6,
+}
+
+# One-way fares indexed by number of zones spanned (1–6)
+ZONE_FARES: dict[int, float] = {
+    1: 3.75, 2: 5.50, 3: 7.25, 4: 9.00, 5: 10.75, 6: 12.50,
+}
+
+
+def get_fare(from_station: str, to_station: str) -> dict | None:
+    """
+    Returns fare info between two stations based on zone span.
+    Returns None if either station is not in STATION_ZONES.
+    Result dict: {"from_zone": int, "to_zone": int, "zones_spanned": int, "fare": float}
+    """
+    from_zone = STATION_ZONES.get(from_station)
+    to_zone = STATION_ZONES.get(to_station)
+    if from_zone is None or to_zone is None:
+        return None
+    zones_spanned = abs(from_zone - to_zone) + 1
+    fare = ZONE_FARES.get(zones_spanned)
+    return {
+        "from_zone": from_zone,
+        "to_zone": to_zone,
+        "zones_spanned": zones_spanned,
+        "fare": fare,
+    }

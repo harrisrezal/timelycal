@@ -166,6 +166,7 @@ curl -X POST https://telegram-bot-1077099046405.us-central1.run.app/admin/upload
 | `/start` | Welcome message for new users with command overview |
 | `/schedule` | Guided menu: pick day → station → direction → see next 3 trains |
 | `/traveltime` | Pick origin → destination → see travel time per train type (Normal/Limited/Express) |
+| `/fare` | Pick origin → destination → see one-way fare based on Caltrain zone |
 | `/ask` | Freeform natural language query via RAG pipeline |
 | `/help` | List all commands |
 | `/mystation` | Save / view / clear your default station |

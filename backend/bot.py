@@ -21,7 +21,7 @@ load_dotenv()
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # ConversationHandler states
-SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO = range(6)
+SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO, SELECT_FARE_FROM, SELECT_FARE_TO = range(8)
 
 
 # ── /next Guided Menu ─────────────────────────────────────────────────────────
@@ -39,6 +39,7 @@ WELCOME_TEXT = (
     "/next         - Next 3 trains from a station\n"
     "/schedule     - Full day timetable for a station\n"
     "/traveltime   - Travel time between two stations\n"
+    "/fare         - Check fare between two stations\n"
     "/mystation    - Save your home station for quick access\n"
     "/help         - Show help anytime\n\n"
     "Let's get you on the right train! 🚂"
@@ -54,6 +55,7 @@ HELP_TEXT = (
     "/next         - Next 3 trains from a station\n"
     "/schedule     - Full day timetable for a station\n"
     "/traveltime   - Travel time between two stations\n"
+    "/fare         - Check fare between two stations\n"
     "/mystation    - View or change your saved station\n"
     "/help         - Show this message"
 )
@@ -651,6 +653,67 @@ async def show_travel_times(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ConversationHandler.END
 
 
+# ── /fare ─────────────────────────────────────────────────────────────────────
+
+async def ask_fare_from(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.schedule import STATIONS
+    buttons = [InlineKeyboardButton(s, callback_data=f"fare_from:{s}") for s in STATIONS]
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    await update.message.reply_text(
+        "Select your departure station:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_FARE_FROM
+
+
+async def ask_fare_to(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.schedule import STATIONS
+    query = update.callback_query
+    await query.answer()
+    context.user_data["fare_from"] = query.data.split(":", 1)[1]
+
+    buttons = [InlineKeyboardButton(s, callback_data=f"fare_to:{s}") for s in STATIONS]
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    await query.edit_message_text(
+        f"From: {context.user_data['fare_from']}\nNow select your destination station:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_FARE_TO
+
+
+async def show_fare(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.schedule import get_fare
+    query = update.callback_query
+    await query.answer()
+
+    from_station = context.user_data["fare_from"]
+    to_station = query.data.split(":", 1)[1]
+
+    if from_station == to_station:
+        await query.edit_message_text(
+            "⚠️ Origin and destination cannot be the same."
+        )
+        return ConversationHandler.END
+
+    fare_info = get_fare(from_station, to_station)
+    if not fare_info:
+        await query.edit_message_text("❌ Fare data unavailable for this route.")
+        return ConversationHandler.END
+
+    zones_word = "zone" if fare_info["zones_spanned"] == 1 else "zones"
+    msg = (
+        f"🎫 Fare: {from_station} → {to_station}\n\n"
+        f"Zone {fare_info['from_zone']} → Zone {fare_info['to_zone']} "
+        f"({fare_info['zones_spanned']} {zones_word})\n\n"
+        f"One-way: ${fare_info['fare']:.2f}\n\n"
+        "⚠️ Fares shown are approximate. Check clipper.com for exact pricing."
+    )
+    await query.edit_message_text(msg)
+    return ConversationHandler.END
+
+
 # ── Timeout & Error Handlers ──────────────────────────────────────────────────
 
 async def _conversation_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -774,6 +837,20 @@ def get_application() -> Application:
         conversation_timeout=30,
     )
     app.add_handler(traveltime_conv)
+
+    # Fare lookup menu
+    fare_conv = ConversationHandler(
+        entry_points=[CommandHandler("fare", ask_fare_from)],
+        states={
+            SELECT_FARE_FROM: [cancel_handler, CallbackQueryHandler(ask_fare_to, pattern="^fare_from:")],
+            SELECT_FARE_TO: [cancel_handler, CallbackQueryHandler(show_fare, pattern="^fare_to:")],
+            ConversationHandler.TIMEOUT: timeout_handler,
+        },
+        fallbacks=[CommandHandler("cancel", cancel_schedule)],
+        allow_reentry=True,
+        conversation_timeout=30,
+    )
+    app.add_handler(fare_conv)
 
     # Standalone preference callbacks (outside ConversationHandlers)
     app.add_handler(CallbackQueryHandler(save_station_callback, pattern="^save_station:"))
