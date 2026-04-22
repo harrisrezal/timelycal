@@ -41,6 +41,7 @@ WELCOME_TEXT = (
     "/traveltime   - Travel time between two stations\n"
     "/fare         - Check fare between two stations\n"
     "/mystation    - Save your home station for quick access\n"
+    "/subscribe    - Get Caltrain service alerts\n"
     "/help         - Show help anytime\n\n"
     "Let's get you on the right train! 🚂"
 )
@@ -57,6 +58,8 @@ HELP_TEXT = (
     "/traveltime   - Travel time between two stations\n"
     "/fare         - Check fare between two stations\n"
     "/mystation    - View or change your saved station\n"
+    "/subscribe    - Subscribe to Caltrain service alerts\n"
+    "/unsubscribe  - Stop receiving alerts\n"
     "/help         - Show this message"
 )
 
@@ -788,6 +791,32 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"👥 Total unique users: {count}")
 
 
+async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from services.announcements import subscribe
+    added = await asyncio.to_thread(subscribe, "telegram", update.effective_chat.id)
+    if added:
+        await update.message.reply_text(
+            "✅ You're now subscribed to Caltrain service alerts!\n\n"
+            "You'll be notified of delays, cancellations, and important updates.\n"
+            "Use /unsubscribe to stop at any time."
+        )
+    else:
+        await update.message.reply_text(
+            "You're already subscribed to alerts. Use /unsubscribe to stop."
+        )
+
+
+async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from services.announcements import unsubscribe
+    removed = await asyncio.to_thread(unsubscribe, "telegram", update.effective_chat.id)
+    if removed:
+        await update.message.reply_text("You've been unsubscribed from Caltrain alerts.")
+    else:
+        await update.message.reply_text(
+            "You're not currently subscribed. Use /subscribe to sign up."
+        )
+
+
 # ── Application Builder ───────────────────────────────────────────────────────
 
 async def _post_init(app: Application) -> None:
@@ -798,8 +827,10 @@ async def _post_init(app: Application) -> None:
         BotCommand("traveltime", "Travel time between two stations"),
         BotCommand("fare",       "Check fare between two stations"),
         BotCommand("mystation",  "Save or view your default station"),
-        BotCommand("ask",        "Ask anything in plain English"),
-        BotCommand("help",       "Show all commands"),
+        BotCommand("ask",         "Ask anything in plain English"),
+        BotCommand("subscribe",   "Subscribe to Caltrain service alerts"),
+        BotCommand("unsubscribe", "Unsubscribe from alerts"),
+        BotCommand("help",        "Show all commands"),
     ])
 
 
@@ -894,6 +925,8 @@ def get_application() -> Application:
     app.add_handler(CommandHandler("mystation", mystation_command))
     app.add_handler(CommandHandler("echo", echo_command))
     app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
 
     # Natural language fallback
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
