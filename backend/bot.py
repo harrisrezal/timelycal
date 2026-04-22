@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # ConversationHandler states
-SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO, SELECT_FARE_FROM, SELECT_FARE_TO = range(8)
+SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO, SELECT_FARE_FROM, SELECT_FARE_TO, SELECT_SUB_TIER, SELECT_SUB_STATION, SELECT_SUB_STATION_GRID = range(11)
 
 
 # ── /next Guided Menu ─────────────────────────────────────────────────────────
@@ -794,20 +794,143 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"👥 Total unique users: {count}")
 
 
-async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from services.announcements import subscribe
-    added = await asyncio.to_thread(subscribe, "telegram", update.effective_chat.id)
-    if added:
+# ── /subscribe Preference Flow ────────────────────────────────────────────────
+
+_TIER_LABELS = {
+    "delays": "Delays & cancellations",
+    "planned": "Planned maintenance",
+    "both": "Both (recommended)",
+}
+
+
+async def ask_sub_tier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.announcements import get_subscription
+
+    existing = await asyncio.to_thread(get_subscription, "telegram", update.effective_chat.id)
+    if existing:
+        tier_label = _TIER_LABELS.get(existing["alert_tier"], existing["alert_tier"])
+        station_label = existing["station"] or "All stations"
+        keyboard = [
+            [InlineKeyboardButton("Update preferences", callback_data="sub_update")],
+            [InlineKeyboardButton("Unsubscribe", callback_data="sub_unsub")],
+            [CANCEL_BTN],
+        ]
         await update.message.reply_text(
-            "✅ Subscribed! You'll now receive Caltrain service alerts for delays, "
-            "cancellations, and important updates.\n\n"
-            "To stop receiving alerts, type /unsubscribe anytime."
+            f"You're already subscribed.\n\n"
+            f"• Alerts: {tier_label}\n"
+            f"• Station: {station_label}\n\n"
+            "What would you like to do?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
+        return SELECT_SUB_TIER
+
+    keyboard = [
+        [InlineKeyboardButton("Delays & cancellations", callback_data="sub_tier:delays")],
+        [InlineKeyboardButton("Planned maintenance", callback_data="sub_tier:planned")],
+        [InlineKeyboardButton("Both (recommended)", callback_data="sub_tier:both")],
+        [CANCEL_BTN],
+    ]
+    await update.message.reply_text(
+        "Step 1 of 2 — What alerts do you want?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_SUB_TIER
+
+
+async def handle_sub_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """User is already subscribed and wants to update — show tier selection."""
+    query = update.callback_query
+    await query.answer()
+    keyboard = [
+        [InlineKeyboardButton("Delays & cancellations", callback_data="sub_tier:delays")],
+        [InlineKeyboardButton("Planned maintenance", callback_data="sub_tier:planned")],
+        [InlineKeyboardButton("Both (recommended)", callback_data="sub_tier:both")],
+        [CANCEL_BTN],
+    ]
+    await query.edit_message_text(
+        "Step 1 of 2 — What alerts do you want?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_SUB_TIER
+
+
+async def handle_sub_unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.announcements import unsubscribe
+    query = update.callback_query
+    await query.answer()
+    await asyncio.to_thread(unsubscribe, "telegram", update.effective_chat.id)
+    await query.edit_message_text(
+        "✅ Unsubscribed. You'll no longer receive Caltrain service alerts.\n\n"
+        "You can resubscribe anytime with /subscribe."
+    )
+    return ConversationHandler.END
+
+
+async def ask_sub_station(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.user_prefs import get_preference
+    query = update.callback_query
+    await query.answer()
+    context.user_data["sub_tier"] = query.data.split(":", 1)[1]
+
+    pref = await asyncio.to_thread(get_preference, update.effective_user.id)
+
+    keyboard = []
+    if pref:
+        station = pref["preferred_station"]
+        keyboard.append([InlineKeyboardButton(f"My station: {station}", callback_data=f"sub_sta_saved:{station}")])
+    keyboard.append([InlineKeyboardButton("Choose a station", callback_data="sub_sta_choose")])
+    keyboard.append([InlineKeyboardButton("All stations", callback_data="sub_sta_all")])
+    keyboard.append([CANCEL_BTN])
+
+    await query.edit_message_text(
+        "Step 2 of 2 — Which station?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_SUB_STATION
+
+
+async def ask_sub_station_grid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.schedule import STATIONS
+    query = update.callback_query
+    await query.answer()
+
+    buttons = [InlineKeyboardButton(s, callback_data=f"sub_sta:{s}") for s in STATIONS]
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    keyboard.append([CANCEL_BTN])
+    await query.edit_message_text(
+        "Select your station:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_SUB_STATION_GRID
+
+
+async def show_sub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from services.announcements import subscribe as _sub
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    if data == "sub_sta_all":
+        station = None
+    elif data.startswith("sub_sta_saved:"):
+        station = data.split(":", 1)[1]
     else:
-        await update.message.reply_text(
-            "You're already subscribed to Caltrain alerts.\n\n"
-            "To stop receiving alerts, type /unsubscribe."
-        )
+        station = data.split(":", 1)[1]
+
+    tier = context.user_data.get("sub_tier", "both")
+    await asyncio.to_thread(_sub, "telegram", update.effective_chat.id, tier, station)
+
+    tier_label = _TIER_LABELS.get(tier, tier)
+    station_label = station or "All stations"
+
+    await query.edit_message_text(
+        f"✅ Subscribed!\n\n"
+        f"• Alerts: {tier_label}\n"
+        f"• Station: {station_label}\n\n"
+        "To update your preferences, type /subscribe again.\n"
+        "To stop alerts, type /unsubscribe."
+    )
+    return ConversationHandler.END
 
 
 async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -932,7 +1055,32 @@ def get_application() -> Application:
     app.add_handler(CommandHandler("mystation", mystation_command))
     app.add_handler(CommandHandler("echo", echo_command))
     app.add_handler(CommandHandler("stats", stats_command))
-    app.add_handler(CommandHandler("subscribe", subscribe_command))
+    subscribe_conv = ConversationHandler(
+        entry_points=[CommandHandler("subscribe", ask_sub_tier)],
+        states={
+            SELECT_SUB_TIER: [
+                cancel_handler,
+                CallbackQueryHandler(handle_sub_update, pattern="^sub_update$"),
+                CallbackQueryHandler(handle_sub_unsubscribe, pattern="^sub_unsub$"),
+                CallbackQueryHandler(ask_sub_station, pattern="^sub_tier:"),
+            ],
+            SELECT_SUB_STATION: [
+                cancel_handler,
+                CallbackQueryHandler(show_sub_confirm, pattern="^sub_sta_all$"),
+                CallbackQueryHandler(show_sub_confirm, pattern="^sub_sta_saved:"),
+                CallbackQueryHandler(ask_sub_station_grid, pattern="^sub_sta_choose$"),
+            ],
+            SELECT_SUB_STATION_GRID: [
+                cancel_handler,
+                CallbackQueryHandler(show_sub_confirm, pattern="^sub_sta:"),
+            ],
+            ConversationHandler.TIMEOUT: timeout_handler,
+        },
+        fallbacks=[CommandHandler("cancel", cancel_schedule)],
+        allow_reentry=True,
+        conversation_timeout=60,
+    )
+    app.add_handler(subscribe_conv)
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
 
     # Natural language fallback
