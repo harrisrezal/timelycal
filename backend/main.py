@@ -25,7 +25,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 async def _poll_and_broadcast(bot) -> None:
-    """Fetch new Caltrain alerts and push to all Telegram subscribers."""
+    """Fetch new Caltrain alerts and push to matching Telegram subscribers."""
     from services.alerts import get_new_alerts
     from services.announcements import get_telegram_subscribers
 
@@ -35,10 +35,22 @@ async def _poll_and_broadcast(bot) -> None:
             return
         subscribers = await asyncio.to_thread(get_telegram_subscribers)
         logger.info(f"Broadcasting {len(new_alerts)} alert(s) to {len(subscribers)} subscriber(s)")
-        for chat_id in subscribers:
-            for message in new_alerts:
+        for sub in subscribers:
+            chat_id = int(sub["platform_id"])
+            tier = sub["alert_tier"]      # 'delays', 'planned', or 'both'
+            station = sub["station"]      # station name or None (all stations)
+
+            for alert in new_alerts:
+                # Tier filter: 'delays' = 511 only, 'planned' = RSS only, 'both' = all
+                if tier == "delays" and alert["source"] != "511":
+                    continue
+                if tier == "planned" and alert["source"] != "rss":
+                    continue
+                # Station filter: skip if alert mentions specific stations and ours isn't among them
+                if station and alert["stations"] and station not in alert["stations"]:
+                    continue
                 try:
-                    await bot.send_message(chat_id=chat_id, text=message)
+                    await bot.send_message(chat_id=chat_id, text=alert["text"])
                 except Exception as e:
                     logger.warning(f"Failed to send alert to {chat_id}: {e}")
     except Exception as e:

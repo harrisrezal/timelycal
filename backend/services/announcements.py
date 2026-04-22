@@ -9,25 +9,17 @@ def _client():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def subscribe(platform: str, platform_id: str) -> bool:
-    """
-    Subscribe a user to Caltrain alerts.
-    Returns True if newly subscribed, False if already subscribed.
-    """
-    existing = (
-        _client()
-        .table("subscriptions")
-        .select("id")
-        .eq("platform", platform)
-        .eq("platform_id", str(platform_id))
-        .execute()
-    )
-    if existing.data:
-        return False
-    _client().table("subscriptions").insert(
-        {"platform": platform, "platform_id": str(platform_id)}
+def subscribe(platform: str, platform_id: str, alert_tier: str = "both", station: str | None = None) -> None:
+    """Upsert subscription — creates new row or updates existing preferences."""
+    _client().table("subscriptions").upsert(
+        {
+            "platform": platform,
+            "platform_id": str(platform_id),
+            "alert_tier": alert_tier,
+            "station": station,
+        },
+        on_conflict="platform,platform_id",
     ).execute()
-    return True
 
 
 def unsubscribe(platform: str, platform_id: str) -> bool:
@@ -46,13 +38,26 @@ def unsubscribe(platform: str, platform_id: str) -> bool:
     return bool(result.data)
 
 
-def get_telegram_subscribers() -> list[int]:
-    """Return all Telegram chat IDs currently subscribed to alerts."""
+def get_subscription(platform: str, platform_id: str) -> dict | None:
+    """Return the subscription row for a user, or None if not subscribed."""
+    result = (
+        _client()
+        .table("subscriptions")
+        .select("*")
+        .eq("platform", platform)
+        .eq("platform_id", str(platform_id))
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def get_telegram_subscribers() -> list[dict]:
+    """Return all Telegram subscriptions with their preferences."""
     rows = (
         _client()
         .table("subscriptions")
-        .select("platform_id")
+        .select("platform_id, alert_tier, station")
         .eq("platform", "telegram")
         .execute()
     )
-    return [int(r["platform_id"]) for r in rows.data]
+    return rows.data

@@ -27,10 +27,16 @@ def _mark_seen(alert_id: str) -> None:
     _client().table("seen_alerts").upsert({"alert_id": alert_id}).execute()
 
 
+def _extract_stations(text: str) -> list[str]:
+    """Return all Caltrain station names mentioned in the given text."""
+    from services.schedule import STATIONS
+    return [s for s in STATIONS if s.lower() in text.lower()]
+
+
 def fetch_511_alerts() -> list[dict]:
     """
     Fetch real-time Caltrain service alerts from the 511 SF Bay API.
-    Returns a list of {id, text} dicts for new alerts.
+    Returns a list of {id, text, source, stations} dicts.
     """
     try:
         resp = httpx.get(
@@ -52,7 +58,12 @@ def fetch_511_alerts() -> list[dict]:
                 text = f"🚨 Caltrain Alert\n\n{header}"
                 if desc and desc != header:
                     text += f"\n\n{desc}"
-                alerts.append({"id": alert_id, "text": text})
+                alerts.append({
+                    "id": alert_id,
+                    "text": text,
+                    "source": "511",
+                    "stations": _extract_stations(header + " " + desc),
+                })
         return alerts
     except Exception:
         return []
@@ -61,7 +72,7 @@ def fetch_511_alerts() -> list[dict]:
 def fetch_rss_alerts() -> list[dict]:
     """
     Fetch Caltrain news and planned service changes from the official RSS feed.
-    Returns a list of {id, text} dicts.
+    Returns a list of {id, text, source, stations} dicts.
     """
     try:
         feed = feedparser.parse(RSS_URL)
@@ -74,21 +85,27 @@ def fetch_rss_alerts() -> list[dict]:
                 text = f"📢 Caltrain News\n\n{title}"
                 if summary and summary != title:
                     text += f"\n\n{summary}"
-                alerts.append({"id": alert_id, "text": text})
+                alerts.append({
+                    "id": alert_id,
+                    "text": text,
+                    "source": "rss",
+                    "stations": _extract_stations(title + " " + summary),
+                })
         return alerts
     except Exception:
         return []
 
 
-def get_new_alerts() -> list[str]:
+def get_new_alerts() -> list[dict]:
     """
     Fetch alerts from 511 API and RSS feed, filter out already-seen ones,
-    mark new ones as seen, and return their message texts.
+    mark new ones as seen, and return them as structured dicts.
+    Each dict: {id, text, source, stations}
     """
     all_alerts = fetch_511_alerts() + fetch_rss_alerts()
-    new_messages = []
+    new_alerts = []
     for alert in all_alerts:
         if not _is_seen(alert["id"]):
             _mark_seen(alert["id"])
-            new_messages.append(alert["text"])
-    return new_messages
+            new_alerts.append(alert)
+    return new_alerts
