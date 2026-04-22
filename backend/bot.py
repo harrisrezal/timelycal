@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from dotenv import load_dotenv
 from db import save_user, get_user_count
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application,
     ApplicationHandlerStop,
@@ -790,9 +790,22 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Application Builder ───────────────────────────────────────────────────────
 
+async def _post_init(app: Application) -> None:
+    """Register bot commands so they appear in the Telegram '/' menu."""
+    await app.bot.set_my_commands([
+        BotCommand("next",       "Next 3 trains from a station"),
+        BotCommand("schedule",   "Full day timetable for a station"),
+        BotCommand("traveltime", "Travel time between two stations"),
+        BotCommand("fare",       "Check fare between two stations"),
+        BotCommand("mystation",  "Save or view your default station"),
+        BotCommand("ask",        "Ask anything in plain English"),
+        BotCommand("help",       "Show all commands"),
+    ])
+
+
 def get_application() -> Application:
     """Build and return the Telegram Application with all handlers registered."""
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
 
     # Rate limit per user (group=-2 runs before everything else)
     app.add_handler(MessageHandler(filters.ALL, _rate_limit_user), group=-2)
