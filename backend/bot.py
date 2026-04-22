@@ -63,7 +63,6 @@ HELP_TEXT = (
     "/fare         - Check fare between two stations\n"
     "/mystation    - View or change your saved station\n"
     "/subscribe    - Subscribe to Caltrain service alerts\n"
-    "/unsubscribe  - Stop receiving alerts\n"
     "/help         - Show this message"
 )
 
