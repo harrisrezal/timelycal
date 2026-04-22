@@ -1,7 +1,9 @@
 import asyncio
+import logging
 import os
 import time
 from collections import defaultdict
+
 from dotenv import load_dotenv
 from db import save_user, get_user_count
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
@@ -17,6 +19,8 @@ from telegram.ext import (
 )
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
