@@ -1,6 +1,8 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -22,14 +24,44 @@ logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
 
+async def _poll_and_broadcast(bot) -> None:
+    """Fetch new Caltrain alerts and push to all Telegram subscribers."""
+    from services.alerts import get_new_alerts
+    from services.announcements import get_telegram_subscribers
+
+    try:
+        new_alerts = await asyncio.to_thread(get_new_alerts)
+        if not new_alerts:
+            return
+        subscribers = await asyncio.to_thread(get_telegram_subscribers)
+        logger.info(f"Broadcasting {len(new_alerts)} alert(s) to {len(subscribers)} subscriber(s)")
+        for chat_id in subscribers:
+            for message in new_alerts:
+                try:
+                    await bot.send_message(chat_id=chat_id, text=message)
+                except Exception as e:
+                    logger.warning(f"Failed to send alert to {chat_id}: {e}")
+    except Exception as e:
+        logger.error(f"Alert poll error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up: initializing Telegram bot...")
     app.state.bot_app = get_application()
     await app.state.bot_app.initialize()
     await app.state.bot_app.start()
+
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(_poll_and_broadcast, "interval", minutes=5, args=[app.state.bot_app.bot])
+    scheduler.start()
+    app.state.scheduler = scheduler
+    logger.info("Alert scheduler started (polling every 5 minutes)")
+
     yield
-    logger.info("Shutting down: stopping Telegram bot...")
+
+    logger.info("Shutting down: stopping scheduler and Telegram bot...")
+    scheduler.shutdown(wait=False)
     await app.state.bot_app.stop()
     await app.state.bot_app.shutdown()
 
