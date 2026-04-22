@@ -111,8 +111,18 @@ async def show_both_directions(update: Update, context: ContextTypes.DEFAULT_TYP
 
     now_mins = now_time.hour * 60 + now_time.minute
 
-    def format_trains(direction):
-        trains = get_next_trains(station, day_type, direction)
+    _SF_TERMINAL = "San Francisco"
+    _SJ_TERMINALS = {"San Jose Diridon", "Tamien"}
+    show_sf = station != _SF_TERMINAL
+    show_sj = station not in _SJ_TERMINALS
+
+    # Fetch both directions in parallel, non-blocking
+    trains_sf, trains_sj = await asyncio.gather(
+        asyncio.to_thread(get_next_trains, station, day_type, "sf") if show_sf else asyncio.sleep(0, result=[]),
+        asyncio.to_thread(get_next_trains, station, day_type, "sj") if show_sj else asyncio.sleep(0, result=[]),
+    )
+
+    def format_trains(trains):
         if not trains:
             return "No upcoming trains."
         lines = []
@@ -124,16 +134,11 @@ async def show_both_directions(update: Update, context: ContextTypes.DEFAULT_TYP
             lines.append(f"Train {t['train']}{_train_label(t['train'])} — {t['time_str']} (in {diff} mins)")
         return "\n".join(lines)
 
-    _SF_TERMINAL = "San Francisco"
-    _SJ_TERMINALS = {"San Jose Diridon", "Tamien"}
-    show_sf = station != _SF_TERMINAL
-    show_sj = station not in _SJ_TERMINALS
-
     parts = [f"📍 {station}\n🗓 {date_str} | {time_str} ({day_label})"]
     if show_sf:
-        parts.append(f"➡️ Towards San Francisco\n{format_trains('sf')}")
+        parts.append(f"➡️ Towards San Francisco\n{format_trains(trains_sf)}")
     if show_sj:
-        parts.append(f"➡️ Towards San Jose\n{format_trains('sj')}")
+        parts.append(f"➡️ Towards San Jose\n{format_trains(trains_sj)}")
     parts.append("⚠️ Schedule-based only. Not real-time.")
     text = "\n\n".join(parts)
 
@@ -188,8 +193,7 @@ async def cancel_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def ask_timing_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from services.user_prefs import get_preference
 
-
-    pref = get_preference(update.effective_user.id)
+    pref = await asyncio.to_thread(get_preference, update.effective_user.id)
     if pref:
         station = pref["preferred_station"]
         context.user_data["station"] = station
@@ -312,7 +316,11 @@ async def show_timing_results(update: Update, context: ContextTypes.DEFAULT_TYPE
     day_type = context.user_data["day_type"]
     dir_label = "San Francisco" if direction == "sf" else "San Jose"
 
-    trains = get_all_trains(station, day_type, direction)
+    # Fetch trains and user preference in parallel, non-blocking
+    trains, pref = await asyncio.gather(
+        asyncio.to_thread(get_all_trains, station, day_type, direction),
+        asyncio.to_thread(get_preference, update.effective_user.id),
+    )
 
     if not trains:
         await query.edit_message_text(
@@ -345,7 +353,6 @@ async def show_timing_results(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(header + "\n" + body)
 
     # Offer to save station if no preference is set
-    pref = get_preference(update.effective_user.id)
     if not pref:
         save_keyboard = [[
             InlineKeyboardButton(
@@ -370,7 +377,7 @@ async def save_station_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     station = query.data.split(":", 1)[1]
-    save_preference(update.effective_user.id, station)
+    await asyncio.to_thread(save_preference, update.effective_user.id, station)
     await query.edit_message_text(f"Saved! {station} is now your default station.")
 
 
@@ -402,8 +409,7 @@ async def mystation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from services.user_prefs import get_preference
     from services.schedule import get_next_trains, _train_label, STATIONS
 
-
-    pref = get_preference(update.effective_user.id)
+    pref = await asyncio.to_thread(get_preference, update.effective_user.id)
     if not pref:
         buttons = [InlineKeyboardButton(s, callback_data=f"mset:{s}") for s in STATIONS]
         keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
@@ -423,8 +429,18 @@ async def mystation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     day_label = "Weekday" if day_type == "weekday" else "Weekend"
     now_mins = now_time.hour * 60 + now_time.minute
 
-    def format_trains(direction):
-        trains = get_next_trains(station, day_type, direction)
+    _SF_TERMINAL = "San Francisco"
+    _SJ_TERMINALS = {"San Jose Diridon", "Tamien"}
+    show_sf = station != _SF_TERMINAL
+    show_sj = station not in _SJ_TERMINALS
+
+    # Fetch both directions in parallel, non-blocking
+    trains_sf, trains_sj = await asyncio.gather(
+        asyncio.to_thread(get_next_trains, station, day_type, "sf") if show_sf else asyncio.sleep(0, result=[]),
+        asyncio.to_thread(get_next_trains, station, day_type, "sj") if show_sj else asyncio.sleep(0, result=[]),
+    )
+
+    def format_trains(trains):
         if not trains:
             return "No upcoming trains."
         lines = []
@@ -436,16 +452,11 @@ async def mystation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"Train {t['train']}{_train_label(t['train'])} — {t['time_str']} (in {diff} mins)")
         return "\n".join(lines)
 
-    _SF_TERMINAL = "San Francisco"
-    _SJ_TERMINALS = {"San Jose Diridon", "Tamien"}
-    show_sf = station != _SF_TERMINAL
-    show_sj = station not in _SJ_TERMINALS
-
     parts = [f"📍 {station}\n🗓 {date_str} | {time_str} ({day_label})"]
     if show_sf:
-        parts.append(f"➡️ Towards San Francisco\n{format_trains('sf')}")
+        parts.append(f"➡️ Towards San Francisco\n{format_trains(trains_sf)}")
     if show_sj:
-        parts.append(f"➡️ Towards San Jose\n{format_trains('sj')}")
+        parts.append(f"➡️ Towards San Jose\n{format_trains(trains_sj)}")
     parts.append("⚠️ Schedule-based only. Not real-time.")
     text = "\n\n".join(parts)
 
@@ -480,7 +491,7 @@ async def mystation_set_callback(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     station = query.data.split(":", 1)[1]
-    save_preference(update.effective_user.id, station)
+    await asyncio.to_thread(save_preference, update.effective_user.id, station)
     await query.edit_message_text(f"Saved! {station} is now your default station.")
 
 
@@ -490,8 +501,12 @@ async def mystation_clear_callback(update: Update, context: ContextTypes.DEFAULT
 
     query = update.callback_query
     await query.answer()
-    client = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
-    client.table("user_preferences").delete().eq("telegram_user_id", update.effective_user.id).execute()
+
+    def _clear():
+        client = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
+        client.table("user_preferences").delete().eq("telegram_user_id", update.effective_user.id).execute()
+
+    await asyncio.to_thread(_clear)
     await query.edit_message_text("Your saved station has been cleared.")
 
 
@@ -584,9 +599,11 @@ async def show_travel_times(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     now_time = now_dt.time()
     day_type = "weekday" if now_dt.weekday() < 5 else "weekend"
 
-    # Fetch both directions: A→B and B→A (swapping from/to flips direction automatically)
-    trains_ab = get_travel_times(from_station, to_station)
-    trains_ba = get_travel_times(to_station, from_station)
+    # Fetch both directions in parallel, non-blocking
+    trains_ab, trains_ba = await asyncio.gather(
+        asyncio.to_thread(get_travel_times, from_station, to_station),
+        asyncio.to_thread(get_travel_times, to_station, from_station),
+    )
 
     if not trains_ab and not trains_ba:
         await query.edit_message_text(
