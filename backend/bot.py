@@ -796,13 +796,14 @@ async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     added = await asyncio.to_thread(subscribe, "telegram", update.effective_chat.id)
     if added:
         await update.message.reply_text(
-            "✅ You're now subscribed to Caltrain service alerts!\n\n"
-            "You'll be notified of delays, cancellations, and important updates.\n"
-            "Use /unsubscribe to stop at any time."
+            "✅ Subscribed! You'll now receive Caltrain service alerts for delays, "
+            "cancellations, and important updates.\n\n"
+            "To stop receiving alerts, type /unsubscribe anytime."
         )
     else:
         await update.message.reply_text(
-            "You're already subscribed to alerts. Use /unsubscribe to stop."
+            "You're already subscribed to Caltrain alerts.\n\n"
+            "To stop receiving alerts, type /unsubscribe."
         )
 
 
@@ -810,10 +811,14 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     from services.announcements import unsubscribe
     removed = await asyncio.to_thread(unsubscribe, "telegram", update.effective_chat.id)
     if removed:
-        await update.message.reply_text("You've been unsubscribed from Caltrain alerts.")
+        await update.message.reply_text(
+            "✅ Unsubscribed. You'll no longer receive Caltrain service alerts.\n\n"
+            "You can resubscribe anytime with /subscribe."
+        )
     else:
         await update.message.reply_text(
-            "You're not currently subscribed. Use /subscribe to sign up."
+            "You're not currently subscribed to alerts.\n\n"
+            "Type /subscribe to start receiving Caltrain service updates."
         )
 
 
@@ -829,7 +834,6 @@ async def _post_init(app: Application) -> None:
         BotCommand("mystation",  "Save or view your default station"),
         BotCommand("ask",         "Ask anything in plain English"),
         BotCommand("subscribe",   "Subscribe to Caltrain service alerts"),
-        BotCommand("unsubscribe", "Unsubscribe from alerts"),
         BotCommand("help",        "Show all commands"),
     ])
 
