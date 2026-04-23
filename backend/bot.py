@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # ConversationHandler states
-SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO, SELECT_FARE_FROM, SELECT_FARE_TO, SELECT_SUB_TIER, SELECT_SUB_STATION, SELECT_SUB_STATION_GRID = range(11)
+SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO, SELECT_FARE_FROM, SELECT_FARE_TO, SELECT_SUB_TIER, SELECT_SUB_STATION, SELECT_SUB_STATION_CONFIRM = range(11)
 
 
 # ── /next Guided Menu ─────────────────────────────────────────────────────────
@@ -796,6 +796,54 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── /subscribe Preference Flow ────────────────────────────────────────────────
 
+_STATION_ALIASES: dict[str, str] = {
+    "sf": "San Francisco", "san fran": "San Francisco",
+    "sj": "San Jose Diridon", "san jose": "San Jose Diridon",
+    "22nd": "22nd Street",
+    "ssf": "S. San Francisco", "s. sf": "S. San Francisco",
+    "mtv": "Mountain View",
+    "cal ave": "California Avenue", "california ave": "California Avenue",
+}
+
+
+def _match_station(raw: str) -> str | None:
+    """Return canonical station name for a raw user input, or None if no match."""
+    from services.schedule import STATIONS
+    s = raw.strip().lower()
+    if s in _STATION_ALIASES:
+        return _STATION_ALIASES[s]
+    for name in STATIONS:
+        if name.lower() == s:
+            return name
+    for name in STATIONS:
+        if name.lower().startswith(s):
+            return name
+    for name in STATIONS:
+        if s in name.lower():
+            return name
+    return None
+
+
+def _parse_stations(text: str) -> tuple[list[str], list[str]]:
+    """
+    Parse comma-separated station input. Returns (matched, unrecognised).
+    Duplicates are silently collapsed — each station appears at most once.
+    """
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    matched: list[str] = []
+    seen: set[str] = set()
+    unrecognised: list[str] = []
+    for part in parts:
+        result = _match_station(part)
+        if result:
+            if result not in seen:
+                seen.add(result)
+                matched.append(result)
+        else:
+            unrecognised.append(part)
+    return matched, unrecognised
+
+
 _TIER_LABELS = {
     "delays": "Delays & cancellations",
     "planned": "Planned maintenance",
@@ -809,7 +857,7 @@ async def ask_sub_tier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     existing = await asyncio.to_thread(get_subscription, "telegram", update.effective_chat.id)
     if existing:
         tier_label = _TIER_LABELS.get(existing["alert_tier"], existing["alert_tier"])
-        station_label = existing["station"] or "All stations"
+        station_label = ", ".join(existing["stations"]) if existing.get("stations") else "All stations"
         keyboard = [
             [InlineKeyboardButton("Update preferences", callback_data="sub_update")],
             [InlineKeyboardButton("Unsubscribe", callback_data="sub_unsub")],
@@ -818,7 +866,7 @@ async def ask_sub_tier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await update.message.reply_text(
             f"You're already subscribed.\n\n"
             f"• Alerts: {tier_label}\n"
-            f"• Station: {station_label}\n\n"
+            f"• Stations: {station_label}\n\n"
             "What would you like to do?",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
@@ -867,41 +915,81 @@ async def handle_sub_unsubscribe(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def ask_sub_station(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    from services.user_prefs import get_preference
+    from services.schedule import STATIONS
     query = update.callback_query
     await query.answer()
     context.user_data["sub_tier"] = query.data.split(":", 1)[1]
 
-    pref = await asyncio.to_thread(get_preference, update.effective_user.id)
-
-    keyboard = []
-    if pref:
-        station = pref["preferred_station"]
-        keyboard.append([InlineKeyboardButton(f"My station: {station}", callback_data=f"sub_sta_saved:{station}")])
-    keyboard.append([InlineKeyboardButton("Choose a station", callback_data="sub_sta_choose")])
-    keyboard.append([InlineKeyboardButton("All stations", callback_data="sub_sta_all")])
-    keyboard.append([CANCEL_BTN])
-
     await query.edit_message_text(
-        "Step 2 of 2 — Which station?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "Step 2 of 2 — Which stations?\n\n"
+        "Type one or more station names separated by commas, "
+        "or type all for all stations.\n\n"
+        f"Available: {', '.join(STATIONS)}\n\n"
+        "Example: Lawrence, Palo Alto, Mountain View\n\n"
+        "/cancel to go back"
     )
     return SELECT_SUB_STATION
 
 
-async def ask_sub_station_grid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_sub_station_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+
+    if text.lower() == "all":
+        context.user_data["sub_stations"] = None
+        keyboard = [
+            [InlineKeyboardButton("Confirm", callback_data="sub_confirm")],
+            [InlineKeyboardButton("Re-enter", callback_data="sub_reenter")],
+            [CANCEL_BTN],
+        ]
+        await update.message.reply_text(
+            "Confirm your stations:\n\n✅ All stations",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return SELECT_SUB_STATION_CONFIRM
+
+    matched, unrecognised = _parse_stations(text)
+
+    if not matched:
+        await update.message.reply_text(
+            f"❌ None of those matched a Caltrain station.\n\n"
+            f"Unrecognised: {', '.join(unrecognised)}\n\n"
+            "Please try again, or type all for all stations."
+        )
+        return SELECT_SUB_STATION
+
+    context.user_data["sub_stations"] = matched
+    lines = [f"✅ {s}" for s in matched]
+    if unrecognised:
+        lines += [f"❓ \"{u}\" — not recognised (will be ignored)" for u in unrecognised]
+
+    keyboard = [
+        [InlineKeyboardButton(
+            "Confirm matched stations" if unrecognised else "Confirm",
+            callback_data="sub_confirm",
+        )],
+        [InlineKeyboardButton("Re-enter", callback_data="sub_reenter")],
+        [CANCEL_BTN],
+    ]
+    await update.message.reply_text(
+        "Confirm your stations:\n\n" + "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return SELECT_SUB_STATION_CONFIRM
+
+
+async def handle_sub_reenter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from services.schedule import STATIONS
     query = update.callback_query
     await query.answer()
-
-    buttons = [InlineKeyboardButton(s, callback_data=f"sub_sta:{s}") for s in STATIONS]
-    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
-    keyboard.append([CANCEL_BTN])
     await query.edit_message_text(
-        "Select your station:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "Step 2 of 2 — Which stations?\n\n"
+        "Type one or more station names separated by commas, "
+        "or type all for all stations.\n\n"
+        f"Available: {', '.join(STATIONS)}\n\n"
+        "Example: Lawrence, Palo Alto, Mountain View\n\n"
+        "/cancel to go back"
     )
-    return SELECT_SUB_STATION_GRID
+    return SELECT_SUB_STATION
 
 
 async def show_sub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -909,24 +997,18 @@ async def show_sub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     await query.answer()
 
-    data = query.data
-    if data == "sub_sta_all":
-        station = None
-    elif data.startswith("sub_sta_saved:"):
-        station = data.split(":", 1)[1]
-    else:
-        station = data.split(":", 1)[1]
-
     tier = context.user_data.get("sub_tier", "both")
-    await asyncio.to_thread(_sub, "telegram", update.effective_chat.id, tier, station)
+    stations = context.user_data.get("sub_stations")  # list[str] or None
+
+    await asyncio.to_thread(_sub, "telegram", update.effective_chat.id, tier, stations)
 
     tier_label = _TIER_LABELS.get(tier, tier)
-    station_label = station or "All stations"
+    station_label = ", ".join(stations) if stations else "All stations"
 
     await query.edit_message_text(
         f"✅ Subscribed!\n\n"
         f"• Alerts: {tier_label}\n"
-        f"• Station: {station_label}\n\n"
+        f"• Stations: {station_label}\n\n"
         "To update your preferences, type /subscribe again.\n"
         "To stop alerts, type /unsubscribe."
     )
@@ -1066,19 +1148,18 @@ def get_application() -> Application:
             ],
             SELECT_SUB_STATION: [
                 cancel_handler,
-                CallbackQueryHandler(show_sub_confirm, pattern="^sub_sta_all$"),
-                CallbackQueryHandler(show_sub_confirm, pattern="^sub_sta_saved:"),
-                CallbackQueryHandler(ask_sub_station_grid, pattern="^sub_sta_choose$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sub_station_input),
             ],
-            SELECT_SUB_STATION_GRID: [
+            SELECT_SUB_STATION_CONFIRM: [
                 cancel_handler,
-                CallbackQueryHandler(show_sub_confirm, pattern="^sub_sta:"),
+                CallbackQueryHandler(show_sub_confirm, pattern="^sub_confirm$"),
+                CallbackQueryHandler(handle_sub_reenter, pattern="^sub_reenter$"),
             ],
             ConversationHandler.TIMEOUT: timeout_handler,
         },
         fallbacks=[CommandHandler("cancel", cancel_schedule)],
         allow_reentry=True,
-        conversation_timeout=60,
+        conversation_timeout=120,
     )
     app.add_handler(subscribe_conv)
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
