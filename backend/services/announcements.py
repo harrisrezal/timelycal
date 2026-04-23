@@ -9,14 +9,14 @@ def _client():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def subscribe(platform: str, platform_id: str, alert_tier: str = "both", station: str | None = None) -> None:
+def subscribe(platform: str, platform_id: str, alert_tier: str = "both", stations: list[str] | None = None) -> None:
     """Upsert subscription — creates new row or updates existing preferences."""
     _client().table("subscriptions").upsert(
         {
             "platform": platform,
             "platform_id": str(platform_id),
             "alert_tier": alert_tier,
-            "station": station,
+            "stations": stations,
         },
         on_conflict="platform,platform_id",
     ).execute()
@@ -56,7 +56,7 @@ def get_telegram_subscribers() -> list[dict]:
     rows = (
         _client()
         .table("subscriptions")
-        .select("platform_id, alert_tier, station")
+        .select("platform_id, alert_tier, stations")
         .eq("platform", "telegram")
         .execute()
     )
