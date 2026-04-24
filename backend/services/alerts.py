@@ -27,10 +27,21 @@ def _mark_seen(alert_id: str) -> None:
     _client().table("seen_alerts").upsert({"alert_id": alert_id}).execute()
 
 
+# Gilroy extension stops not included in the scheduling STATIONS list
+_EXTENSION_STATIONS = [
+    "Blossom Hill",
+    "Capitol",
+    "Morgan Hill",
+    "San Martin",
+    "Gilroy",
+]
+
+
 def _extract_stations(text: str) -> list[str]:
     """Return all Caltrain station names mentioned in the given text."""
     from services.schedule import STATIONS
-    return [s for s in STATIONS if s.lower() in text.lower()]
+    all_stations = STATIONS + _EXTENSION_STATIONS
+    return [s for s in all_stations if s.lower() in text.lower()]
 
 
 def fetch_511_alerts() -> list[dict]:
