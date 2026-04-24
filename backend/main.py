@@ -52,20 +52,30 @@ async def _poll_and_broadcast(bot) -> None:
                 try:
                     message_text = alert["text"]
                     if sub_stations and alert["stations"]:
-                        from services.alerts import _extract_train_numbers, _get_train_stop_time
+                        from services.alerts import (
+                            _extract_train_numbers, _get_train_stop_time,
+                            _extract_delay_info, _add_minutes,
+                        )
                         train_nums = _extract_train_numbers(alert["text"])
                         affected = [s for s in sub_stations if s in alert["stations"]]
                         if train_nums and affected:
+                            delay_info = _extract_delay_info(alert["text"])
                             lines = []
                             for station in affected:
                                 stop_time = await asyncio.to_thread(
                                     _get_train_stop_time, train_nums[0], station
                                 )
-                                lines.append(
-                                    f"ℹ️ Affects your station: {station} at ~{stop_time}"
-                                    if stop_time else
-                                    f"ℹ️ Affects your station: {station}"
-                                )
+                                if stop_time and delay_info:
+                                    delay_label, delay_mins = delay_info
+                                    est_time = _add_minutes(stop_time, delay_mins)
+                                    lines.append(
+                                        f"ℹ️ Affects your station: {station} — "
+                                        f"sched. {stop_time}, now ~{est_time} (+{delay_label})"
+                                    )
+                                elif stop_time:
+                                    lines.append(f"ℹ️ Affects your station: {station} at ~{stop_time}")
+                                else:
+                                    lines.append(f"ℹ️ Affects your station: {station}")
                             if lines:
                                 message_text += "\n\n" + "\n".join(lines)
                     await bot.send_message(chat_id=chat_id, text=message_text)

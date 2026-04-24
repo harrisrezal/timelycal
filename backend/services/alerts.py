@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import datetime, timedelta
 import httpx
 import feedparser
 from supabase import create_client
@@ -96,6 +97,36 @@ def _get_train_stop_time(train_num: str, station: str) -> str | None:
         return None
     except Exception:
         return None
+
+
+def _extract_delay_info(text: str) -> tuple[str, int] | None:
+    """Extract delay from alert text. Returns (display_label, minutes) or None.
+    Handles ranges: '35-40 minutes late' → ('35-40 min', 37).
+    """
+    m = re.search(r'(\d+)(?:-(\d+))?\s+minutes?\s+late', text, re.IGNORECASE)
+    if not m:
+        return None
+    lo = int(m.group(1))
+    if m.group(2):
+        hi = int(m.group(2))
+        return (f"{lo}-{hi} min", (lo + hi) // 2)
+    return (f"{lo} min", lo)
+
+
+def _add_minutes(time_str: str, minutes: int) -> str:
+    """Add minutes to a time string like '6:46am' and return the new time string."""
+    m = re.match(r'(\d{1,2}):(\d{2})(am|pm)', time_str, re.IGNORECASE)
+    if not m:
+        return time_str
+    hour, minute, meridiem = int(m.group(1)), int(m.group(2)), m.group(3).lower()
+    if meridiem == "pm" and hour != 12:
+        hour += 12
+    elif meridiem == "am" and hour == 12:
+        hour = 0
+    dt = datetime(2000, 1, 1, hour, minute) + timedelta(minutes=minutes)
+    new_meridiem = "am" if dt.hour < 12 else "pm"
+    display_hour = dt.hour % 12 or 12
+    return f"{display_hour}:{dt.minute:02d}{new_meridiem}"
 
 
 def _extract_stations(text: str) -> list[str]:
