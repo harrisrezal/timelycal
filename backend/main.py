@@ -50,7 +50,25 @@ async def _poll_and_broadcast(bot) -> None:
                 if sub_stations and alert["stations"] and not any(s in alert["stations"] for s in sub_stations):
                     continue
                 try:
-                    await bot.send_message(chat_id=chat_id, text=alert["text"])
+                    message_text = alert["text"]
+                    if sub_stations and alert["stations"]:
+                        from services.alerts import _extract_train_numbers, _get_train_stop_time
+                        train_nums = _extract_train_numbers(alert["text"])
+                        affected = [s for s in sub_stations if s in alert["stations"]]
+                        if train_nums and affected:
+                            lines = []
+                            for station in affected:
+                                stop_time = await asyncio.to_thread(
+                                    _get_train_stop_time, train_nums[0], station
+                                )
+                                lines.append(
+                                    f"ℹ️ Affects your station: {station} at ~{stop_time}"
+                                    if stop_time else
+                                    f"ℹ️ Affects your station: {station}"
+                                )
+                            if lines:
+                                message_text += "\n\n" + "\n".join(lines)
+                    await bot.send_message(chat_id=chat_id, text=message_text)
                 except Exception as e:
                     logger.warning(f"Failed to send alert to {chat_id}: {e}")
     except Exception as e:

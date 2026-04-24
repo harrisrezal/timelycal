@@ -1,4 +1,5 @@
 import os
+import re
 import httpx
 import feedparser
 from supabase import create_client
@@ -36,12 +37,77 @@ _EXTENSION_STATIONS = [
     "Gilroy",
 ]
 
+_TRAIN_NUM_RE = re.compile(r'[Tt]rain\s+(\d{3,4})')
+
+
+def _extract_train_numbers(text: str) -> list[str]:
+    """Return all train numbers mentioned in the text."""
+    return _TRAIN_NUM_RE.findall(text)
+
+
+def _lookup_train_stations(train_num: str) -> list[str]:
+    """Query Supabase documents for all stations that train_num serves."""
+    try:
+        rows = (
+            _client()
+            .table("documents")
+            .select("content")
+            .ilike("content", f"%{train_num}:%")
+            .execute()
+        ).data
+        stations = []
+        for row in rows:
+            m = re.match(r'Info:\s*([^|]+)', row.get("content", ""))
+            if m:
+                name = m.group(1).strip()
+                if name and name not in stations:
+                    stations.append(name)
+        return stations
+    except Exception:
+        return []
+
+
+def _get_train_stop_time(train_num: str, station: str) -> str | None:
+    """Return scheduled departure time for train_num at station, or None."""
+    try:
+        rows = (
+            _client()
+            .table("documents")
+            .select("content")
+            .ilike("content", f"%{station}%")
+            .execute()
+        ).data
+        station_rows = [
+            r for r in rows
+            if re.search(
+                rf'Info:\s*{re.escape(station)}\s*(?:\||$)',
+                r.get("content", ""),
+                re.IGNORECASE,
+            )
+        ]
+        train_pattern = re.compile(
+            rf'\b{re.escape(train_num)}:\s*(\d{{1,2}}:\d{{2}}[apm]+)',
+            re.IGNORECASE,
+        )
+        for row in station_rows:
+            m = train_pattern.search(row["content"])
+            if m:
+                return m.group(1)
+        return None
+    except Exception:
+        return None
+
 
 def _extract_stations(text: str) -> list[str]:
-    """Return all Caltrain station names mentioned in the given text."""
+    """Return Caltrain station names mentioned in text, including via train number lookup."""
     from services.schedule import STATIONS
     all_stations = STATIONS + _EXTENSION_STATIONS
-    return [s for s in all_stations if s.lower() in text.lower()]
+    found = [s for s in all_stations if s.lower() in text.lower()]
+    for train_num in _extract_train_numbers(text):
+        for station in _lookup_train_stations(train_num):
+            if station not in found:
+                found.append(station)
+    return found
 
 
 def fetch_511_alerts() -> list[dict]:
