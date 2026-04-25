@@ -40,6 +40,14 @@ _EXTENSION_STATIONS = [
 
 _TRAIN_NUM_RE = re.compile(r'[Tt]rain\s+(\d{3,4})')
 
+# Operational noise — not useful to commuters
+_SKIP_ALERT_PREFIXES = ["track change", "equipment change"]
+
+
+def _is_unwanted_alert(header: str) -> bool:
+    lower = header.lower()
+    return any(lower.startswith(p) for p in _SKIP_ALERT_PREFIXES)
+
 
 def _extract_train_numbers(text: str) -> list[str]:
     """Return all train numbers mentioned in the text."""
@@ -162,7 +170,7 @@ def fetch_511_alerts() -> list[dict]:
             header = translations[0].get("Text", "")
             desc_translations = alert.get("DescriptionText", {}).get("Translations") or [{}]
             desc = desc_translations[0].get("Text", "")
-            if header:
+            if header and not _is_unwanted_alert(header):
                 text = f"🚨 Caltrain Alert\n\n{header}"
                 if desc and desc != header:
                     text += f"\n\n{desc}"
