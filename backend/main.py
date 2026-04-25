@@ -37,15 +37,9 @@ async def _poll_and_broadcast(bot) -> None:
         logger.info(f"Broadcasting {len(new_alerts)} alert(s) to {len(subscribers)} subscriber(s)")
         for sub in subscribers:
             chat_id = int(sub["platform_id"])
-            tier = sub["alert_tier"]       # 'delays', 'planned', or 'both'
             sub_stations = sub["stations"] # list[str] or None (all stations)
 
             for alert in new_alerts:
-                # Tier filter: 'delays' = 511 only, 'planned' = RSS only, 'both' = all
-                if tier == "delays" and alert["source"] != "511":
-                    continue
-                if tier == "planned" and alert["source"] != "rss":
-                    continue
                 # Station filter: skip if none of the subscriber's stations are mentioned
                 if sub_stations and alert["stations"] and not any(s in alert["stations"] for s in sub_stations):
                     continue

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # ConversationHandler states
-SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO, SELECT_FARE_FROM, SELECT_FARE_TO, SELECT_SUB_TIER, SELECT_SUB_STATION, SELECT_SUB_STATION_CONFIRM = range(11)
+SELECT_DAY, SELECT_STATION, SELECT_DIRECTION, SELECT_USE_SAVED, SELECT_TT_FROM, SELECT_TT_TO, SELECT_FARE_FROM, SELECT_FARE_TO, SELECT_SUB_STATION, SELECT_SUB_STATION_CONFIRM = range(10)
 
 
 # ── /next Guided Menu ─────────────────────────────────────────────────────────
@@ -844,62 +844,62 @@ def _parse_stations(text: str) -> tuple[list[str], list[str]]:
     return matched, unrecognised
 
 
-_TIER_LABELS = {
-    "delays": "Delays & cancellations",
-    "planned": "Planned maintenance",
-    "both": "Both (recommended)",
-}
+_HIGH_VALUE_ALERTS_TEXT = (
+    "You'll receive high-priority alerts only:\n"
+    "• Delays & cancellations\n"
+    "• Suspended or limited service\n"
+    "• Early departures\n"
+    "• Planned maintenance"
+)
 
 
-async def ask_sub_tier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def ask_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from services.announcements import get_subscription
+    from services.schedule import STATIONS
 
     existing = await asyncio.to_thread(get_subscription, "telegram", update.effective_chat.id)
     if existing:
-        tier_label = _TIER_LABELS.get(existing["alert_tier"], existing["alert_tier"])
         station_label = ", ".join(existing["stations"]) if existing.get("stations") else "All stations"
         keyboard = [
-            [InlineKeyboardButton("Update preferences", callback_data="sub_update")],
+            [InlineKeyboardButton("Update stations", callback_data="sub_update")],
             [InlineKeyboardButton("Unsubscribe", callback_data="sub_unsub")],
             [CANCEL_BTN],
         ]
         await update.message.reply_text(
             f"You're already subscribed.\n\n"
-            f"• Alerts: {tier_label}\n"
             f"• Stations: {station_label}\n\n"
+            f"{_HIGH_VALUE_ALERTS_TEXT}\n\n"
             "What would you like to do?",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
-        return SELECT_SUB_TIER
+        return SELECT_SUB_STATION_CONFIRM
 
-    keyboard = [
-        [InlineKeyboardButton("Delays & cancellations", callback_data="sub_tier:delays")],
-        [InlineKeyboardButton("Planned maintenance", callback_data="sub_tier:planned")],
-        [InlineKeyboardButton("Both (recommended)", callback_data="sub_tier:both")],
-        [CANCEL_BTN],
-    ]
     await update.message.reply_text(
-        "Step 1 of 2 — What alerts do you want?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        f"{_HIGH_VALUE_ALERTS_TEXT}\n\n"
+        "Which stations do you want alerts for?\n\n"
+        "Type one or more station names separated by commas, "
+        "or type all for all stations.\n\n"
+        f"Available: {', '.join(STATIONS)}\n\n"
+        "Example: Lawrence, Palo Alto, Mountain View\n\n"
+        "/cancel to go back"
     )
-    return SELECT_SUB_TIER
+    return SELECT_SUB_STATION
 
 
 async def handle_sub_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User is already subscribed and wants to update — show tier selection."""
+    """User is already subscribed and wants to update their stations."""
+    from services.schedule import STATIONS
     query = update.callback_query
     await query.answer()
-    keyboard = [
-        [InlineKeyboardButton("Delays & cancellations", callback_data="sub_tier:delays")],
-        [InlineKeyboardButton("Planned maintenance", callback_data="sub_tier:planned")],
-        [InlineKeyboardButton("Both (recommended)", callback_data="sub_tier:both")],
-        [CANCEL_BTN],
-    ]
     await query.edit_message_text(
-        "Step 1 of 2 — What alerts do you want?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "Which stations do you want alerts for?\n\n"
+        "Type one or more station names separated by commas, "
+        "or type all for all stations.\n\n"
+        f"Available: {', '.join(STATIONS)}\n\n"
+        "Example: Lawrence, Palo Alto, Mountain View\n\n"
+        "/cancel to go back"
     )
-    return SELECT_SUB_TIER
+    return SELECT_SUB_STATION
 
 
 async def handle_sub_unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -914,21 +914,6 @@ async def handle_sub_unsubscribe(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 
-async def ask_sub_station(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    from services.schedule import STATIONS
-    query = update.callback_query
-    await query.answer()
-    context.user_data["sub_tier"] = query.data.split(":", 1)[1]
-
-    await query.edit_message_text(
-        "Step 2 of 2 — Which stations?\n\n"
-        "Type one or more station names separated by commas, "
-        "or type all for all stations.\n\n"
-        f"Available: {', '.join(STATIONS)}\n\n"
-        "Example: Lawrence, Palo Alto, Mountain View\n\n"
-        "/cancel to go back"
-    )
-    return SELECT_SUB_STATION
 
 
 async def handle_sub_station_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -982,7 +967,7 @@ async def handle_sub_reenter(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "Step 2 of 2 — Which stations?\n\n"
+        "Which stations do you want alerts for?\n\n"
         "Type one or more station names separated by commas, "
         "or type all for all stations.\n\n"
         f"Available: {', '.join(STATIONS)}\n\n"
@@ -997,19 +982,17 @@ async def show_sub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     await query.answer()
 
-    tier = context.user_data.get("sub_tier", "both")
     stations = context.user_data.get("sub_stations")  # list[str] or None
 
-    await asyncio.to_thread(_sub, "telegram", update.effective_chat.id, tier, stations)
+    await asyncio.to_thread(_sub, "telegram", update.effective_chat.id, "both", stations)
 
-    tier_label = _TIER_LABELS.get(tier, tier)
     station_label = ", ".join(stations) if stations else "All stations"
 
     await query.edit_message_text(
         f"✅ Subscribed!\n\n"
-        f"• Alerts: {tier_label}\n"
         f"• Stations: {station_label}\n\n"
-        "To update your preferences, type /subscribe again.\n"
+        f"{_HIGH_VALUE_ALERTS_TEXT}\n\n"
+        "To update your stations, type /subscribe again.\n"
         "To stop alerts, type /unsubscribe."
     )
     return ConversationHandler.END
@@ -1138,14 +1121,8 @@ def get_application() -> Application:
     app.add_handler(CommandHandler("echo", echo_command))
     app.add_handler(CommandHandler("stats", stats_command))
     subscribe_conv = ConversationHandler(
-        entry_points=[CommandHandler("subscribe", ask_sub_tier)],
+        entry_points=[CommandHandler("subscribe", ask_subscribe)],
         states={
-            SELECT_SUB_TIER: [
-                cancel_handler,
-                CallbackQueryHandler(handle_sub_update, pattern="^sub_update$"),
-                CallbackQueryHandler(handle_sub_unsubscribe, pattern="^sub_unsub$"),
-                CallbackQueryHandler(ask_sub_station, pattern="^sub_tier:"),
-            ],
             SELECT_SUB_STATION: [
                 cancel_handler,
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sub_station_input),
@@ -1154,6 +1131,8 @@ def get_application() -> Application:
                 cancel_handler,
                 CallbackQueryHandler(show_sub_confirm, pattern="^sub_confirm$"),
                 CallbackQueryHandler(handle_sub_reenter, pattern="^sub_reenter$"),
+                CallbackQueryHandler(handle_sub_update, pattern="^sub_update$"),
+                CallbackQueryHandler(handle_sub_unsubscribe, pattern="^sub_unsub$"),
             ],
             ConversationHandler.TIMEOUT: timeout_handler,
         },
