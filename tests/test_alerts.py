@@ -12,6 +12,7 @@ from services.alerts import (
     _extract_stations,
     _extract_delay_info,
     _add_minutes,
+    _is_unwanted_alert,
 )
 
 
@@ -163,3 +164,17 @@ class TestAddMinutes:
 
     def test_invalid_format_returns_original(self):
         assert _add_minutes("unknown", 10) == "unknown"
+
+
+class TestIsUnwantedAlert:
+    def test_track_change_filtered(self):
+        assert _is_unwanted_alert("Track Change: Train 168 will Arrive and Depart off Track 9") is True
+
+    def test_track_change_case_insensitive(self):
+        assert _is_unwanted_alert("track change: some alert") is True
+
+    def test_delay_not_filtered(self):
+        assert _is_unwanted_alert("Delayed: Train 420 Southbound Is Running About 35-40 Minutes Late") is False
+
+    def test_cancellation_not_filtered(self):
+        assert _is_unwanted_alert("Cancelled: Train 101 will not operate today") is False
