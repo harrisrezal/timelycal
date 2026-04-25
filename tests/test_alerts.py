@@ -10,6 +10,8 @@ from services.alerts import (
     _lookup_train_stations,
     _get_train_stop_time,
     _extract_stations,
+    _extract_delay_info,
+    _add_minutes,
 )
 
 
@@ -125,3 +127,39 @@ class TestExtractStations:
     def test_extension_station_matched_directly(self):
         result = _extract_stations("Delay at San Martin station")
         assert "San Martin" in result
+
+
+class TestExtractDelayInfo:
+    def test_single_value(self):
+        assert _extract_delay_info("Train 107 is running about 12 minutes late") == ("12 min", 12)
+
+    def test_range_value(self):
+        label, mins = _extract_delay_info("Train 420 is running about 35-40 minutes late")
+        assert label == "35-40 min"
+        assert mins == 37
+
+    def test_no_delay_returns_none(self):
+        assert _extract_delay_info("Train 420 Southbound Is Running Late") is None
+
+    def test_case_insensitive(self):
+        assert _extract_delay_info("running 5 Minutes Late") == ("5 min", 5)
+
+
+class TestAddMinutes:
+    def test_simple_addition(self):
+        assert _add_minutes("6:46am", 12) == "6:58am"
+
+    def test_crosses_hour(self):
+        assert _add_minutes("6:55am", 10) == "7:05am"
+
+    def test_crosses_noon(self):
+        assert _add_minutes("11:50am", 15) == "12:05pm"
+
+    def test_pm_time(self):
+        assert _add_minutes("2:10pm", 37) == "2:47pm"
+
+    def test_range_midpoint(self):
+        assert _add_minutes("6:46am", 37) == "7:23am"
+
+    def test_invalid_format_returns_original(self):
+        assert _add_minutes("unknown", 10) == "unknown"
