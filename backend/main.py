@@ -63,15 +63,15 @@ async def _poll_and_broadcast(bot) -> None:
                                     delay_label, delay_mins = delay_info
                                     est_time = _add_minutes(stop_time, delay_mins)
                                     lines.append(
-                                        f"ℹ️ Affects your station: {station} — "
-                                        f"sched. {stop_time}, now ~{est_time} (+{delay_label})"
+                                        f"• {station} — sched. {stop_time}, now ~{est_time} (+{delay_label})"
                                     )
                                 elif stop_time:
-                                    lines.append(f"ℹ️ Affects your station: {station} at ~{stop_time}")
+                                    lines.append(f"• {station} — sched. {stop_time}")
                                 else:
-                                    lines.append(f"ℹ️ Affects your station: {station}")
+                                    lines.append(f"• {station}")
                             if lines:
-                                message_text += "\n\n" + "\n".join(lines)
+                                header = "ℹ️ Affects your station" + ("s" if len(lines) > 1 else "") + ":"
+                                message_text += "\n\n" + header + "\n" + "\n".join(lines)
                     await bot.send_message(chat_id=chat_id, text=message_text)
                 except Exception as e:
                     logger.warning(f"Failed to send alert to {chat_id}: {e}")
