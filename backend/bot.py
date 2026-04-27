@@ -74,6 +74,13 @@ async def _cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return ConversationHandler.END
 
 
+async def _stale_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle cancel presses on orphaned keyboards after a conversation has already ended."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("Session expired. Use the menu to start again.")
+
+
 async def ask_day_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     import pytz
     from datetime import datetime
@@ -1106,6 +1113,10 @@ def get_application() -> Application:
         conversation_timeout=30,
     )
     app.add_handler(fare_conv)
+
+    # Fallback cancel handler — catches stale cancel presses on orphaned keyboards
+    # after a conversation has already ended (group=1 runs only if group=0 didn't handle it)
+    app.add_handler(CallbackQueryHandler(_stale_cancel_callback, pattern="^cancel$"), group=1)
 
     # Standalone preference callbacks (outside ConversationHandlers)
     app.add_handler(CallbackQueryHandler(save_station_callback, pattern="^save_station:"))
