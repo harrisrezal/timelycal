@@ -43,6 +43,17 @@ _TRAIN_NUM_RE = re.compile(r'[Tt]rain\s+(\d{3,4})')
 # Operational noise — not useful to commuters
 _SKIP_ALERT_PREFIXES = ["track change", "equipment change"]
 
+_DIRECTION_SUBS = [
+    (re.compile(r'\bnorthbound\b', re.IGNORECASE), 'towards San Francisco'),
+    (re.compile(r'\bsouthbound\b', re.IGNORECASE), 'towards San Jose'),
+]
+
+
+def _humanise_directions(text: str) -> str:
+    for pattern, replacement in _DIRECTION_SUBS:
+        text = pattern.sub(replacement, text)
+    return text
+
 
 def _is_unwanted_alert(header: str) -> bool:
     lower = header.lower()
@@ -174,6 +185,7 @@ def fetch_511_alerts() -> list[dict]:
                 text = f"🚨 Caltrain Alert\n\n{header}"
                 if desc and desc != header:
                     text += f"\n\n{desc}"
+                text = _humanise_directions(text)
                 alerts.append({
                     "id": alert_id,
                     "text": text,
@@ -201,6 +213,7 @@ def fetch_rss_alerts() -> list[dict]:
                 text = f"📢 Caltrain News\n\n{title}"
                 if summary and summary != title:
                     text += f"\n\n{summary}"
+                text = _humanise_directions(text)
                 alerts.append({
                     "id": alert_id,
                     "text": text,

@@ -13,6 +13,7 @@ from services.alerts import (
     _extract_delay_info,
     _add_minutes,
     _is_unwanted_alert,
+    _humanise_directions,
 )
 
 
@@ -185,3 +186,23 @@ class TestIsUnwantedAlert:
 
     def test_early_departure_not_filtered(self):
         assert _is_unwanted_alert("Early Departure: Train 422 will depart 5 minutes early") is False
+
+
+class TestHumaniseDirections:
+    def test_southbound_replaced(self):
+        assert _humanise_directions("Train 112 southbound") == "Train 112 towards San Jose"
+
+    def test_northbound_replaced(self):
+        assert _humanise_directions("Train 101 northbound") == "Train 101 towards San Francisco"
+
+    def test_case_insensitive(self):
+        assert _humanise_directions("Train 112 Southbound") == "Train 112 towards San Jose"
+        assert _humanise_directions("Train 101 Northbound") == "Train 101 towards San Francisco"
+
+    def test_no_direction_unchanged(self):
+        assert _humanise_directions("Train 112 is delayed") == "Train 112 is delayed"
+
+    def test_both_directions_in_text(self):
+        result = _humanise_directions("northbound trains and southbound trains")
+        assert "towards San Francisco" in result
+        assert "towards San Jose" in result
