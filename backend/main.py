@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
@@ -35,6 +36,10 @@ async def _poll_and_broadcast(bot) -> None:
             return
         subscribers = await asyncio.to_thread(get_telegram_subscribers)
         logger.info(f"Broadcasting {len(new_alerts)} alert(s) to {len(subscribers)} subscriber(s)")
+        import pytz
+        pacific = pytz.timezone("America/Los_Angeles")
+        now = datetime.now(pacific)
+        now_mins = now.hour * 60 + now.minute
         for sub in subscribers:
             chat_id = int(sub["platform_id"])
             sub_stations = sub["stations"] # list[str] or None (all stations)
@@ -48,7 +53,7 @@ async def _poll_and_broadcast(bot) -> None:
                     if sub_stations and alert["stations"]:
                         from services.alerts import (
                             _extract_train_numbers, _get_train_stop_time,
-                            _extract_delay_info, _add_minutes,
+                            _extract_delay_info, _add_minutes, _time_to_mins,
                         )
                         train_nums = _extract_train_numbers(alert["text"])
                         affected = [s for s in sub_stations if s in alert["stations"]]
@@ -62,10 +67,16 @@ async def _poll_and_broadcast(bot) -> None:
                                 if stop_time and delay_info:
                                     delay_label, delay_mins = delay_info
                                     est_time = _add_minutes(stop_time, delay_mins)
+                                    est_mins = _time_to_mins(est_time)
+                                    if est_mins is not None and est_mins < now_mins:
+                                        continue  # estimated arrival already passed
                                     lines.append(
                                         f"• {station} — sched. {stop_time}, now ~{est_time} (+{delay_label})"
                                     )
                                 elif stop_time:
+                                    sched_mins = _time_to_mins(stop_time)
+                                    if sched_mins is not None and sched_mins < now_mins:
+                                        continue  # scheduled time already passed
                                     lines.append(f"• {station} — sched. {stop_time}")
                                 else:
                                     lines.append(f"• {station}")
