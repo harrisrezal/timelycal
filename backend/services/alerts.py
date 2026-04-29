@@ -148,6 +148,19 @@ def _add_minutes(time_str: str, minutes: int) -> str:
     return f"{display_hour}:{dt.minute:02d}{new_meridiem}"
 
 
+def _time_to_mins(time_str: str) -> int | None:
+    """Parse a time string like '3:54pm' into minutes since midnight, or None on failure."""
+    m = re.match(r'(\d{1,2}):(\d{2})(am|pm)', time_str, re.IGNORECASE)
+    if not m:
+        return None
+    hour, minute, meridiem = int(m.group(1)), int(m.group(2)), m.group(3).lower()
+    if meridiem == "pm" and hour != 12:
+        hour += 12
+    elif meridiem == "am" and hour == 12:
+        hour = 0
+    return hour * 60 + minute
+
+
 def _extract_stations(text: str) -> list[str]:
     """Return Caltrain station names mentioned in text, including via train number lookup."""
     from services.schedule import STATIONS

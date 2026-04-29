@@ -12,6 +12,7 @@ from services.alerts import (
     _extract_stations,
     _extract_delay_info,
     _add_minutes,
+    _time_to_mins,
     _is_unwanted_alert,
     _humanise_directions,
 )
@@ -210,3 +211,20 @@ class TestHumaniseDirections:
         result = _humanise_directions("northbound trains and southbound trains")
         assert "towards San Francisco" in result
         assert "towards San Jose" in result
+
+
+class TestTimeToMins:
+    def test_afternoon_time(self):
+        assert _time_to_mins("3:54pm") == 954
+
+    def test_morning_time(self):
+        assert _time_to_mins("6:46am") == 406
+
+    def test_noon(self):
+        assert _time_to_mins("12:00pm") == 720
+
+    def test_midnight(self):
+        assert _time_to_mins("12:00am") == 0
+
+    def test_invalid_returns_none(self):
+        assert _time_to_mins("unknown") is None
