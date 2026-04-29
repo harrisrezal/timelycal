@@ -41,7 +41,7 @@ _EXTENSION_STATIONS = [
 _TRAIN_NUM_RE = re.compile(r'[Tt]rain\s+(\d{3,4})')
 
 # Operational noise — not useful to commuters
-_SKIP_ALERT_PREFIXES = ["track change", "equipment change"]
+_SKIP_ALERT_PREFIXES = ["track change", "equipment change", "platform change"]
 
 _DIRECTION_SUBS = [
     (re.compile(r'\bnorthbound\b', re.IGNORECASE), 'towards San Francisco'),
