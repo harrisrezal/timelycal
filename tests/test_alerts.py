@@ -174,9 +174,13 @@ class TestIsUnwantedAlert:
     def test_equipment_change_filtered(self):
         assert _is_unwanted_alert("Equipment Change: Train 420 will operate with fewer cars") is True
 
+    def test_platform_change_filtered(self):
+        assert _is_unwanted_alert("Platform Change: Train 123 will Depart off Track 8 at San Jose Diridon") is True
+
     def test_case_insensitive(self):
         assert _is_unwanted_alert("track change: some alert") is True
         assert _is_unwanted_alert("equipment change: some alert") is True
+        assert _is_unwanted_alert("platform change: some alert") is True
 
     def test_delay_not_filtered(self):
         assert _is_unwanted_alert("Delayed: Train 420 Is Running 35-40 Minutes Late") is False
